@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Laravel
+backend/bootstrap/cache/*
+backend/storage/*.key
+backend/storage/logs/*
+backend/storage/app/public/*
+backend/public/hot
+backend/public/storage
+
+# Nuxt
+frontend-devflow/.nuxt/
+frontend-devflow/.output/
+frontend-devflow/dist/
+
+# Docker
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
