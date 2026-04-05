@@ -25,12 +25,18 @@ export interface Task {
   status: TaskStatus
   priority: TaskPriority
   due_date: string | null
+  is_overdue:boolean
   project_id: number
   created_by: number
   created_at: string
   project?: Project
   assignees?: User[]
   creator?: User
+}
+
+export interface ValidationError {
+  message: string
+  errors: Record<string, string[]>
 }
 
 export interface ApiResponse<T> {
