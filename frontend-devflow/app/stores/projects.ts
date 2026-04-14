@@ -7,6 +7,24 @@ export const useProjectStore = defineStore('projects', () => {
   const loading  = ref(false)
   const error    = ref<string | null>(null)
 
+  // DSA — Hash Map O(1) lookup:
+  // projectsById is a computed Record<number, Project> — a hash map
+  // keyed by project ID. Looking up a project by ID is now O(1)
+  // instead of O(n) linear scan with Array.find().
+  //
+  // This replaces the findById linear search from Day 2.
+  // Same tradeoff as using a hash map vs an array in Two Sum:
+  // O(n) extra space to build the map, O(1) every lookup after that.
+  // Worth it when the same project is looked up many times.
+  const projectsById = computed((): Record<number, Project> => {
+    const map: Record<number, Project> = {}
+    for (const project of projects.value) {
+      map[project.id] = project
+    }
+    return map
+  })
+
+
   // DSA — Array Sort O(n log n)
   // Sorted by creation date, newest first.
   // Using spread [...projects.value] to avoid mutating the original ref —

@@ -34,6 +34,27 @@ export interface Task {
   creator?: User
 }
 
+// DSA — Cursor pagination response shape:
+// next_cursor is an opaque string token pointing to the last seen row.
+// The API uses this to jump directly to the next page via index lookup
+// instead of scanning and discarding rows with OFFSET.
+export interface CursorPaginatedResponse<T> {
+  data: T[]
+  meta: {
+    next_cursor:  string | null
+    prev_cursor:  string | null
+    per_page:     number
+    path:         string
+  }
+  links: {
+    first: string | null
+    last:  string | null
+    prev:  string | null
+    next:  string | null
+  }
+}
+
+
 export interface ValidationError {
   message: string
   errors: Record<string, string[]>

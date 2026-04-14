@@ -17,6 +17,7 @@ export default defineNuxtConfig({
   },
   modules: [
     '@pinia/nuxt',
+    '@vueuse/core'
   ],
 
  runtimeConfig: {

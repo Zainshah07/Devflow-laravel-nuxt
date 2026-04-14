@@ -11,6 +11,9 @@ use App\Http\Requests\StoreTaskRequest;
 use App\Http\Requests\UpdateTaskRequest;
 use App\Enums\TaskStatus;
 use Illuminate\Http\Resources\JsonResponse;
+use Spatie\QueryBuilder\AllowedFilter;
+use Spatie\QueryBuilder\AllowedSort;
+use Spatie\QueryBuilder\QueryBuilder;
 
 
 class TaskController extends Controller
@@ -18,11 +21,44 @@ class TaskController extends Controller
     public function index(Request $request, Project $project)
     {
         $this->authorize('view', $project);
-
-        $tasks = $project->tasks()
+        // ─────────────────────────────────────────────────────────────
+        // DSA — Binary Search in action:
+        // allowedSorts maps to ORDER BY clauses that use B-tree indexes.
+        // Sorting by due_date uses idx_tasks_due_date — O(log n) seek.
+        // Without the index MySQL would sort all rows in memory — O(n log n).
+        //
+        // DSA — Hash Map lookup:
+        // AllowedFilter::scope('search') calls scopeSearch which uses
+        // MATCH AGAINST — the FULLTEXT inverted index hash map.
+        //
+        // DSA — Cursor Pagination O(log n) vs O(n):
+        // cursorPaginate uses the primary key index to jump to the
+        // correct starting row. Offset-based paginate scans and
+        // discards all previous rows on every page request.
+        // ─────────────────────────────────────────────────────────────
+        $tasks = QueryBuilder::for(Task::class)
+            ->allowedFilters([
+                AllowedFilter::exact('status'),
+                AllowedFilter::exact('priority'),
+                AllowedFilter::scope('search'),
+            ])
+            ->allowedSorts([
+                AllowedSort::field('created_at'),
+                AllowedSort::field('due_date'),
+                AllowedSort::field('priority'),
+                AllowedSort::field('title'),
+            ])
+            ->allowedIncludes(['assignees', 'creator', 'project'])
+            ->where('project_id', $project->id)
             ->with(['assignees', 'creator'])
-            ->latest()
-            ->get();
+            ->defaultSort('-created_at')
+            ->cursorPaginate(20);
+
+
+        // $tasks = $project->tasks()
+        //     ->with(['assignees', 'creator'])
+        //     ->latest()
+        //     ->get();
 
         return TaskResource::collection($tasks);
     }

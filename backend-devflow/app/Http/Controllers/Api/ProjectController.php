@@ -14,6 +14,14 @@ class ProjectController extends Controller
 {
     public function index(Request $request)
     {
+        // DSA — Preventing N+1 (graph traversal optimization):
+    // withCount('tasks') adds a COUNT subquery in a single SQL call.
+    // Without it: 1 query for projects + 1 query per project = N+1.
+    // With it: always exactly 2 queries regardless of project count.
+    // This is the same optimization as BFS level-order traversal —
+    // collect all nodes at a level in one pass instead of visiting
+    // each one individually.
+    
         $user = $request->user();
         $projects = $user->projects()->withCount('tasks')
             ->with('owner')

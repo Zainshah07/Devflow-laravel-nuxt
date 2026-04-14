@@ -22,7 +22,7 @@ class ProjectPolicy
     public function view(User $user, Project $project): bool
     {
         return $user->id === $project->user_id;
-    }
+    } 
 
     /**
      * Determine whether the user can create models.
