@@ -30,7 +30,7 @@ class ProjectController extends Controller
         return response()->json([
             'success'  => true,
             'message'  => 'Projects fetched successfully',
-            'projects' => ProjectResource::collection($projects),
+            'data' => ProjectResource::collection($projects),
         ], 200);
     }
 
@@ -41,7 +41,7 @@ class ProjectController extends Controller
         return response()->json([
             'success'  => true,
             'message'  => 'Project created successfully',
-            'project'  => ProjectResource::single($project),
+            'data'  => ProjectResource::single($project),
         ], 201);
     }
 
@@ -55,7 +55,7 @@ class ProjectController extends Controller
         return response()->json([
             'success'  => true,
             'message'  => 'Project fetched successfully',
-            'project'  => ProjectResource::single($project),
+            'data'  => ProjectResource::single($project),
         ], 200);
     }
 
@@ -68,7 +68,7 @@ class ProjectController extends Controller
         return response()->json([
             'success'  => true,
             'message'  => 'Project updated successfully',
-            'project'  => ProjectResource::single($project),
+            'data'  => ProjectResource::single($project),
         ], 200);
     }
     public function destroy(Request $request, Project $project): ProjectResource

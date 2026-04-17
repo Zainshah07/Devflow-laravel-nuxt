@@ -30,9 +30,13 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({
+  layout:     'default',
+  middleware: 'auth',
+})
 import { useProjectStore } from '~/stores/projects'
 
-definePageMeta({ layout: 'default' })
+
 
 const store = useProjectStore()
 

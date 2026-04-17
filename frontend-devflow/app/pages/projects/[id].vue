@@ -100,12 +100,17 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({
+  layout:     'default',
+  // middleware: 'auth',
+})
+
 import { useProjectStore }  from '~/stores/projects'
 import { useTaskStore }     from '~/stores/tasks'
 import { useTaskFilters }   from '~/composables/useTaskFilters'
 import type { Project, TaskStatus } from '~/types'
 
-definePageMeta({ layout: 'default' })
+
 
 const route        = useRoute()
 const projectStore = useProjectStore()

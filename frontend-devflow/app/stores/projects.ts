@@ -78,8 +78,9 @@ export const useProjectStore = defineStore('projects', () => {
     return projects.value.find(p => p.id === id)
   }
 
-  return {
+   return {
     projects,
+    projectsById,      // add this
     sortedProjects,
     loading,
     error,

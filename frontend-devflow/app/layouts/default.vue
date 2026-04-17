@@ -3,47 +3,96 @@
     <aside class="sidebar">
       <div class="sidebar-logo">
         <span class="logo-text">DevFlow</span>
+        <small class="logo-sub">Workspace</small>
       </div>
 
       <nav class="sidebar-nav">
-        <p class="nav-section">Navigation</p>
-        <NuxtLink to="/" class="nav-item" active-class="nav-item--active">
+        <p class="nav-section-label">Navigation</p>
+        <NuxtLink to="/" class="nav-item" active-class="nav-item--active" exact>
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="1" y="1" width="5" height="5" rx="1"/>
+            <rect x="9" y="1" width="5" height="5" rx="1"/>
+            <rect x="1" y="9" width="5" height="5" rx="1"/>
+            <rect x="9" y="9" width="5" height="5" rx="1"/>
+          </svg>
           Dashboard
         </NuxtLink>
         <NuxtLink to="/projects" class="nav-item" active-class="nav-item--active">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="1" y="3" width="4" height="9" rx="1"/>
+            <rect x="6" y="3" width="4" height="6" rx="1"/>
+            <rect x="11" y="3" width="3" height="11" rx="1"/>
+          </svg>
           Projects
         </NuxtLink>
       </nav>
+
+      <div class="sidebar-bottom">
+        <div class="user-row">
+          <div class="user-avatar">
+            {{ userInitials }}
+          </div>
+          <div class="user-info">
+            <span class="user-name">{{ authStore.user?.name ?? 'Loading...' }}</span>
+            <span class="user-email">{{ authStore.user?.email }}</span>
+          </div>
+        </div>
+        <button class="logout-btn" @click="handleLogout">
+          Sign out
+        </button>
+      </div>
     </aside>
 
-    <main class="main-content">
+    <div class="main-wrapper">
       <header class="topbar">
         <h1 class="page-title">{{ pageTitle }}</h1>
       </header>
 
-      <div class="page-body">
+      <main class="page-body">
         <slot />
-      </div>
-    </main>
+      </main>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-const route = useRoute()
+import { useAuthStore } from '~/stores/auth'
+
+const route     = useRoute()
+const router    = useRouter()
+const authStore = useAuthStore()
+
+const pageTitles: Record<string, string> = {
+  '/':         'Dashboard',
+  '/projects': 'All Projects',
+}
 
 const pageTitle = computed(() => {
-  const map: Record<string, string> = {
-    '/':         'Dashboard',
-    '/projects': 'Projects',
-  }
-  return map[route.path] ?? 'DevFlow'
+  if (route.path.startsWith('/projects/')) return 'Project Board'
+  return pageTitles[route.path] ?? 'DevFlow'
 })
+
+const userInitials = computed(() => {
+  const name = authStore.user?.name ?? ''
+  return name
+    .split(' ')
+    .slice(0, 2)
+    .map(n => n[0])
+    .join('')
+    .toUpperCase() || 'U'
+})
+
+async function handleLogout(): Promise<void> {
+  await authStore.logout()
+  await router.push('/login')
+}
 </script>
 
 <style scoped>
 .layout {
   display: flex;
   min-height: 100vh;
+  background: #f9fafb;
 }
 
 .sidebar {
@@ -53,39 +102,53 @@ const pageTitle = computed(() => {
   border-right: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
 }
 
 .sidebar-logo {
-  padding: 20px 16px 16px;
+  padding: 18px 16px 14px;
   border-bottom: 1px solid #e5e7eb;
 }
 
 .logo-text {
+  display: block;
   font-size: 16px;
   font-weight: 600;
   color: #111827;
+  letter-spacing: -0.3px;
+}
+
+.logo-sub {
+  font-size: 11px;
+  color: #9ca3af;
+  font-style: normal;
 }
 
 .sidebar-nav {
-  padding: 12px 8px;
+  padding: 10px 8px;
+  flex: 1;
 }
 
-.nav-section {
+.nav-section-label {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: #9ca3af;
+  color: #d1d5db;
   padding: 8px 8px 4px;
 }
 
 .nav-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 10px;
   border-radius: 6px;
   font-size: 13px;
   color: #6b7280;
-  margin: 1px 0;
+  margin: 2px 0;
   transition: background 0.1s, color 0.1s;
 }
 
@@ -100,7 +163,84 @@ const pageTitle = computed(() => {
   font-weight: 500;
 }
 
-.main-content {
+.nav-item svg {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.nav-item--active svg {
+  opacity: 1;
+}
+
+.sidebar-bottom {
+  padding: 12px 10px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 8px;
+}
+
+.user-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #e6f1fb;
+  color: #185fa5;
+  font-size: 11px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.user-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-email {
+  font-size: 11px;
+  color: #9ca3af;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logout-btn {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  color: #6b7280;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.logout-btn:hover {
+  background: #fee2e2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.main-wrapper {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -108,16 +248,19 @@ const pageTitle = computed(() => {
 }
 
 .topbar {
-  height: 56px;
+  height: 54px;
   padding: 0 24px;
   border-bottom: 1px solid #e5e7eb;
+  background: #ffffff;
   display: flex;
   align-items: center;
-  background: #ffffff;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .page-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
   color: #111827;
 }

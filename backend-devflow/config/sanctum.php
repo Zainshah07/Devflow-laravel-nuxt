@@ -31,7 +31,8 @@ return [
     | Sanctum is trying to authenticate a request. If none of these guards
     | are able to authenticate the request, Sanctum will use the bearer
     | token that's present on an incoming request for authentication.
-    |
+
+   
     */
 
     'guard' => ['web'],
@@ -44,10 +45,16 @@ return [
     | This value controls the number of minutes until an issued token will be
     | considered expired. This will override any values set in the token's
     | "expires_at" attribute, but first-party sessions are not affected.
+    
+     DSA — Sliding Window:
+    | Each access token lives for exactly 15 minutes from creation.
+    | When the frontend calls /auth/refresh, a new token is issued with a
+    | fresh 15-minute window — the window slides forward on each refresh.
+    |
     |
     */
 
-    'expiration' => null,
+    'expiration' => 15,
 
     /*
     |--------------------------------------------------------------------------
