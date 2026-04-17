@@ -14,6 +14,8 @@ use Illuminate\Http\Resources\JsonResponse;
 use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\AllowedSort;
 use Spatie\QueryBuilder\QueryBuilder;
+use App\Http\Controllers\Api\StatsController;
+
 
 
 class TaskController extends Controller
@@ -72,6 +74,7 @@ class TaskController extends Controller
             'created_by' => $request->user()->id,
             'status'     => TaskStatus::Todo->value,
         ]);
+        StatsController::invalidateCache($request->user()->id);
         $task->load(['assignees', 'creator', 'project']);
 
 
@@ -122,6 +125,7 @@ class TaskController extends Controller
             }
         }
         $task->update($request->validated());
+        StatsController::invalidateCache($request->user()->id);
         $task->load(['assignees', 'creator', 'project']);
 
         return response()->json([
@@ -135,6 +139,7 @@ class TaskController extends Controller
         $this->authorize('view', $project);
 
         $task->delete();
+        StatsController::invalidateCache($request->user()->id);
 
         return response()->json([
             'success'  => true,

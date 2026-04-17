@@ -41,7 +41,7 @@ class ProjectController extends Controller
         return response()->json([
             'success'  => true,
             'message'  => 'Project created successfully',
-            'data'  => ProjectResource::single($project),
+            'data'  => new ProjectResource($project),
         ], 201);
     }
 
@@ -55,11 +55,11 @@ class ProjectController extends Controller
         return response()->json([
             'success'  => true,
             'message'  => 'Project fetched successfully',
-            'data'  => ProjectResource::single($project),
+            'data'  => new ProjectResource($project),
         ], 200);
     }
 
-    public function update(UpdateProjectRequest $request, Project $project): ProjectResource
+    public function update(UpdateProjectRequest $request, Project $project)
     {
         $this->authorize('update', $project);
 
@@ -68,10 +68,10 @@ class ProjectController extends Controller
         return response()->json([
             'success'  => true,
             'message'  => 'Project updated successfully',
-            'data'  => ProjectResource::single($project),
+            'data'  => new ProjectResource($project),
         ], 200);
     }
-    public function destroy(Request $request, Project $project): ProjectResource
+    public function destroy(Request $request, Project $project)
     {
         $this->authorize('delete', $project);
 

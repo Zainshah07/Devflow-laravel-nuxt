@@ -7,6 +7,27 @@ export interface User {
   email: string
 }
 
+// ── Stats types ─────────────────────────────────────────────────────
+
+export interface ProjectStat {
+  id:              number
+  name:            string
+  total_tasks:     number
+  done_tasks:      number
+  completion_rate: number
+}
+
+export interface DashboardStats {
+  total_tasks:       number
+  completed_tasks:   number
+  todo_tasks:        number
+  in_progress_tasks: number
+  overdue_tasks:     number
+  completion_rate:   number
+  total_projects:    number
+  project_stats:     ProjectStat[]
+}
+
 export interface Project {
   id:          number
   name:        string

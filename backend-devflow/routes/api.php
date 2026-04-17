@@ -5,6 +5,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\TaskAssignmentController;
+use App\Http\Controllers\Api\StatsController;
 
 
 Route::get('/health', function () {
@@ -32,6 +34,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me',      [AuthController::class, 'me']);
+
+     // Stats endpoint
+    Route::get('/stats', [StatsController::class, 'index']);
+
+    // Task assignment
+    Route::post('/tasks/{task}/assign',            [TaskAssignmentController::class, 'store']);
+    Route::delete('/tasks/{task}/assign/{user}',   [TaskAssignmentController::class, 'destroy']);
 
     Route::apiResource('projects', ProjectController::class);
     Route::apiResource('projects.tasks', TaskController::class)->shallow();
