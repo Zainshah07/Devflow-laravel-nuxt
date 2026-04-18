@@ -15,71 +15,64 @@ use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\AllowedSort;
 use Spatie\QueryBuilder\QueryBuilder;
 use App\Http\Controllers\Api\StatsController;
+use App\Services\TaskCacheService;
 
 
 
 class TaskController extends Controller
 {
+     public function __construct(
+        private readonly TaskCacheService $cache
+    ) {}
+
     public function index(Request $request, Project $project)
-    {
-        $this->authorize('view', $project);
+{
+    $this->authorize('view', $project);
 
-        // ─────────────────────────────────────────────────────────────
-        // DSA — Hash Map cache-aside pattern:
-        // 1. Build the cache key from project ID + query params hash
-        // 2. Check Redis — if key exists return it immediately (O(1))
-        // 3. On miss: run the full DB query, store in Redis, return
-        //
-        // The cache key includes all query params so different filter
-        // combinations each get their own cache entry — same concept
-        // as using a composite key in a hash map problem.
-        // ─────────────────────────────────────────────────────────────
+    $cacheKey = $this->cache->buildKey($project->id, $request->query());
 
-        $cacheKey = $this->cache->buildKey($project->id, $request->query());
+    $tasks = $this->cache->remember(
+        $cacheKey,
+        $project->id,
+        function () use ($request, $project) {
 
-        // ─────────────────────────────────────────────────────────────
-        // DSA — Binary Search in action:
-        // allowedSorts maps to ORDER BY clauses that use B-tree indexes.
-        // Sorting by due_date uses idx_tasks_due_date — O(log n) seek.
-        // Without the index MySQL would sort all rows in memory — O(n log n).
-        //
-        // DSA — Hash Map lookup:
-        // AllowedFilter::scope('search') calls scopeSearch which uses
-        // MATCH AGAINST — the FULLTEXT inverted index hash map.
-        //
-        // DSA — Cursor Pagination O(log n) vs O(n):
-        // cursorPaginate uses the primary key index to jump to the
-        // correct starting row. Offset-based paginate scans and
-        // discards all previous rows on every page request.
-        // ─────────────────────────────────────────────────────────────
-        $tasks = $this->cache->remember($cacheKey, $project->id, function() use($request, $project){
-            QueryBuilder::for(Task::class)
-            ->allowedFilters([
-                AllowedFilter::exact('status'),
-                AllowedFilter::exact('priority'),
-                AllowedFilter::scope('search'),
-            ])
-            ->allowedSorts([
-                AllowedSort::field('created_at'),
-                AllowedSort::field('due_date'),
-                AllowedSort::field('priority'),
-                AllowedSort::field('title'),
-            ])
-            ->allowedIncludes(['assignees', 'creator', 'project'])
-            ->where('project_id', $project->id)
-            ->with(['assignees', 'creator'])
-            ->defaultSort('-created_at')
-            ->cursorPaginate(20);
-        }) ;   
+            $query = QueryBuilder::for(Task::class)
+                // ✅ FIXED (variadic arguments — Spatie v4/v5 change)
+                ->allowedFilters(
+                    AllowedFilter::exact('status'),
+                    AllowedFilter::exact('priority'),
+                    AllowedFilter::scope('search')
+                )
+                ->allowedSorts(
+                    AllowedSort::field('created_at'),
+                    AllowedSort::field('due_date'),
+                    AllowedSort::field('priority'),
+                    AllowedSort::field('title')
+                )
+                ->allowedIncludes('assignees', 'creator', 'project')
+                ->where('project_id', $project->id)
+                ->with(['assignees', 'creator'])
+                ->defaultSort('-created_at')
+                ->cursorPaginate(20);
 
+            // ✅ CRITICAL FIX: never cache paginator object
+            return [
+                'data' => $query->items(),
+                'next_cursor' => optional($query->nextCursor())->encode(),
+                'prev_cursor' => optional($query->previousCursor())->encode(),
+            ];
+        }
+    );
 
-        // $tasks = $project->tasks()
-        //     ->with(['assignees', 'creator'])
-        //     ->latest()
-        //     ->get();
-
-        return TaskResource::collection($tasks);
-    }
+    // ✅ Convert back to paginator-style API response
+    return TaskResource::collection(collect($tasks['data']))
+        ->additional([
+            'meta' => [
+                'next_cursor' => $tasks['next_cursor'],
+                'prev_cursor' => $tasks['prev_cursor'],
+            ]
+        ]);
+}
 
     public function store(StoreTaskRequest $request, Project $project)
     {
@@ -102,7 +95,7 @@ class TaskController extends Controller
         return response()->json([
             'success'  => true,
             'message'  => 'Task created successfully',
-            'task'     => TaskResource::single($task),
+            'data'     => TaskResource::single($task),
         ], 201);
     }
 
@@ -115,7 +108,7 @@ class TaskController extends Controller
         return response()->json([
             'success'  => true,
             'message'  => 'Task fetched successfully',
-            'task'     => TaskResource::single($task),
+            'data'     => TaskResource::single($task),
         ], 200);
     }
 
@@ -155,11 +148,11 @@ class TaskController extends Controller
         return response()->json([
             'success'  => true,
             'message'  => 'Task updated successfully',
-            'task'     => TaskResource::single($task),
+            'data'     => TaskResource::single($task),
         ], 200);
     }
 
-    public function destroy(){
+    public function destroy(Request $request, Project $project, Task $task){
         $this->authorize('view', $project);
 
         $task->delete();
