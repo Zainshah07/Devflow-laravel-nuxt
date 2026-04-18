@@ -23,6 +23,20 @@ class TaskController extends Controller
     public function index(Request $request, Project $project)
     {
         $this->authorize('view', $project);
+
+        // ─────────────────────────────────────────────────────────────
+        // DSA — Hash Map cache-aside pattern:
+        // 1. Build the cache key from project ID + query params hash
+        // 2. Check Redis — if key exists return it immediately (O(1))
+        // 3. On miss: run the full DB query, store in Redis, return
+        //
+        // The cache key includes all query params so different filter
+        // combinations each get their own cache entry — same concept
+        // as using a composite key in a hash map problem.
+        // ─────────────────────────────────────────────────────────────
+
+        $cacheKey = $this->cache->buildKey($project->id, $request->query());
+
         // ─────────────────────────────────────────────────────────────
         // DSA — Binary Search in action:
         // allowedSorts maps to ORDER BY clauses that use B-tree indexes.
@@ -38,7 +52,8 @@ class TaskController extends Controller
         // correct starting row. Offset-based paginate scans and
         // discards all previous rows on every page request.
         // ─────────────────────────────────────────────────────────────
-        $tasks = QueryBuilder::for(Task::class)
+        $tasks = $this->cache->remember($cacheKey, $project->id, function() use($request, $project){
+            QueryBuilder::for(Task::class)
             ->allowedFilters([
                 AllowedFilter::exact('status'),
                 AllowedFilter::exact('priority'),
@@ -55,6 +70,7 @@ class TaskController extends Controller
             ->with(['assignees', 'creator'])
             ->defaultSort('-created_at')
             ->cursorPaginate(20);
+        }) ;   
 
 
         // $tasks = $project->tasks()
@@ -74,6 +90,11 @@ class TaskController extends Controller
             'created_by' => $request->user()->id,
             'status'     => TaskStatus::Todo->value,
         ]);
+
+         // Invalidate the task list cache for this project
+        // DSA — bulk delete by tag: O(1) tag flush regardless of
+        // how many individual cache entries exist for this project
+        $this->cache->invalidateProject($project->id);
         StatsController::invalidateCache($request->user()->id);
         $task->load(['assignees', 'creator', 'project']);
 
@@ -125,8 +146,11 @@ class TaskController extends Controller
             }
         }
         $task->update($request->validated());
+        // Invalidate cache after every write
+        $this->cache->invalidateProject($project->id);
+        
         StatsController::invalidateCache($request->user()->id);
-        $task->load(['assignees', 'creator', 'project']);
+        $task->fresh()->load(['assignees', 'creator', 'project']);
 
         return response()->json([
             'success'  => true,
@@ -139,6 +163,7 @@ class TaskController extends Controller
         $this->authorize('view', $project);
 
         $task->delete();
+          $this->cache->invalidateProject($project->id);
         StatsController::invalidateCache($request->user()->id);
 
         return response()->json([

@@ -8,14 +8,8 @@ export const useProjectStore = defineStore('projects', () => {
   const error    = ref<string | null>(null)
 
   // DSA — Hash Map O(1) lookup:
-  // projectsById is a computed Record<number, Project> — a hash map
-  // keyed by project ID. Looking up a project by ID is now O(1)
-  // instead of O(n) linear scan with Array.find().
-  //
-  // This replaces the findById linear search from Day 2.
-  // Same tradeoff as using a hash map vs an array in Two Sum:
-  // O(n) extra space to build the map, O(1) every lookup after that.
-  // Worth it when the same project is looked up many times.
+  // projectsById computed builds a Record<id, Project> once.
+  // Every findById call is O(1) hash lookup instead of O(n) scan.
   const projectsById = computed((): Record<number, Project> => {
     const map: Record<number, Project> = {}
     for (const project of projects.value) {
@@ -24,11 +18,8 @@ export const useProjectStore = defineStore('projects', () => {
     return map
   })
 
-
-  // DSA — Array Sort O(n log n)
-  // Sorted by creation date, newest first.
-  // Using spread [...projects.value] to avoid mutating the original ref —
-  // same defensive copy pattern used in immutable array problems.
+  // DSA — Array Sort O(n log n):
+  // Spread to avoid mutating the source ref — defensive copy.
   const sortedProjects = computed((): Project[] =>
     [...projects.value].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -37,7 +28,7 @@ export const useProjectStore = defineStore('projects', () => {
 
   async function fetchProjects(): Promise<void> {
     loading.value = true
-    error.value = null
+    error.value   = null
 
     try {
       const { get } = useApi()
@@ -51,13 +42,31 @@ export const useProjectStore = defineStore('projects', () => {
   }
 
   async function createProject(payload: {
-    name: string
+    name:         string
     description?: string
   }): Promise<Project> {
-    const { post } = useApi()
-    const response = await post<{ data: Project }>('/projects', payload)
+    const { post }  = useApi()
+    const response  = await post<{ data: Project }>('/projects', payload)
+    const newProject = response.data
 
-    projects.value.unshift(response.data)
+    // DSA — Array prepend O(n): new project appears first in sorted list
+    projects.value.unshift(newProject)
+
+    return newProject
+  }
+
+  async function updateProject(
+    projectId: number,
+    payload: { name?: string; description?: string }
+  ): Promise<Project> {
+    const { patch } = useApi()
+    const response  = await patch<{ data: Project }>(`/projects/${projectId}`, payload)
+
+    // DSA — O(n) find + O(1) replace
+    const index = projects.value.findIndex(p => p.id === projectId)
+    if (index !== -1) {
+      projects.value[index] = response.data
+    }
 
     return response.data
   }
@@ -66,26 +75,24 @@ export const useProjectStore = defineStore('projects', () => {
     const { destroy } = useApi()
     await destroy(`/projects/${projectId}`)
 
-    // DSA: filter is O(n) — removes the deleted node from the array
+    // DSA — Array filter O(n): rebuild array excluding deleted node
     projects.value = projects.value.filter(p => p.id !== projectId)
   }
 
-  // DSA — Linear Search O(n)
-  // Scans the array for the first matching id.
-  // On Day 3 this will be replaced with a HashMap lookup O(1)
-  // when we add a projectsById computed: Record<number, Project>
+  // DSA — O(1) Hash Map lookup replacing O(n) linear search
   function findById(id: number): Project | undefined {
-    return projects.value.find(p => p.id === id)
+    return projectsById.value[id]
   }
 
-   return {
+  return {
     projects,
-    projectsById,      // add this
+    projectsById,
     sortedProjects,
     loading,
     error,
     fetchProjects,
     createProject,
+    updateProject,
     deleteProject,
     findById,
   }

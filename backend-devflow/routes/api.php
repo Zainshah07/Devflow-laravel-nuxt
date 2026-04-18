@@ -7,6 +7,8 @@ use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\TaskAssignmentController;
 use App\Http\Controllers\Api\StatsController;
+use App\Http\Controllers\Api\LeaderboardController;
+
 
 
 Route::get('/health', function () {
@@ -37,6 +39,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
      // Stats endpoint
     Route::get('/stats', [StatsController::class, 'index']);
+
+    Route::get('/projects/{project}/leaderboard', [LeaderboardController::class, 'index']);
 
     // Task assignment
     Route::post('/tasks/{task}/assign',            [TaskAssignmentController::class, 'store']);

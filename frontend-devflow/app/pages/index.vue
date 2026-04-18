@@ -6,7 +6,7 @@
       <StatCard
         label="Total tasks"
         :value="statsStore.stats?.total_tasks ?? 0"
-        :sub="statsStore.stats ? '+' + statsStore.stats.in_progress_tasks + ' in progress' : ''"
+        :sub="statsStore.stats ? statsStore.stats.in_progress_tasks + ' in progress' : '—'"
       />
       <StatCard
         label="Completed"
@@ -20,38 +20,40 @@
       <StatCard
         label="Todo"
         :value="statsStore.stats?.todo_tasks ?? 0"
-        :sub="statsStore.stats?.total_projects + ' active projects'"
+        :sub="(statsStore.stats?.total_projects ?? 0) + ' active projects'"
       />
       <StatCard
         label="Overdue"
         :value="statsStore.stats?.overdue_tasks ?? 0"
-        :value-color="statsStore.hasOverdue ? '#ef4444' : '#111827'"
+        :value-color="statsStore.hasOverdue ? '#ef4444' : undefined"
         :sub="statsStore.hasOverdue ? 'Needs attention' : 'All on track'"
         :sub-class="statsStore.hasOverdue ? 'stat-sub--danger' : 'stat-sub--success'"
       />
     </div>
 
-    <!-- Two column layout: projects + create modal trigger -->
     <div class="dashboard-grid">
 
-      <!-- Project list column -->
+      <!-- Left: projects list -->
       <div>
         <div class="section-header">
           <h2 class="section-title">Your projects</h2>
-          <button class="btn-primary" @click="showCreateModal = true">
+          <button class="btn-primary" @click="openCreateModal">
             + New project
           </button>
         </div>
 
-        <div v-if="projectStore.loading" class="loading-msg">
+        <div v-if="projectStore.loading" class="state-msg">
           Loading projects...
         </div>
 
-        <div v-else-if="projectStore.error" class="error-msg">
+        <div v-else-if="projectStore.error" class="state-msg state-msg--error">
           {{ projectStore.error }}
         </div>
 
-        <div v-else-if="projectStore.sortedProjects.length === 0" class="empty-state">
+        <div
+          v-else-if="projectStore.sortedProjects.length === 0"
+          class="empty-state"
+        >
           No projects yet. Create your first project to get started.
         </div>
 
@@ -77,17 +79,20 @@
         </div>
       </div>
 
-      <!-- Progress column -->
+      <!-- Right: progress by project -->
       <div>
         <div class="section-header">
           <h2 class="section-title">Progress by project</h2>
         </div>
 
-        <div v-if="statsStore.loading" class="loading-msg">
-          Loading stats...
+        <div v-if="statsStore.loading" class="state-msg">
+          Loading...
         </div>
 
-        <div v-else-if="statsStore.sortedProjectStats.length === 0" class="empty-state">
+        <div
+          v-else-if="statsStore.sortedProjectStats.length === 0"
+          class="empty-state"
+        >
           No project stats yet.
         </div>
 
@@ -106,17 +111,26 @@
     <div
       v-if="showCreateModal"
       class="modal-backdrop"
-      @click.self="showCreateModal = false"
+      @click.self="closeCreateModal"
     >
       <div class="modal">
-        <h3 class="modal-title">Create project</h3>
+        <div class="modal-header">
+          <h3 class="modal-title">Create project</h3>
+          <button class="modal-close" @click="closeCreateModal">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 2l10 10M12 2L2 12"/>
+            </svg>
+          </button>
+        </div>
 
         <form @submit.prevent="handleCreate">
           <div class="form-group">
-            <label class="form-label">Project name</label>
+            <label class="form-label">Project name <span class="required">*</span></label>
             <input
+              ref="nameInputRef"
               v-model="form.name"
               class="form-input"
+              :class="{ 'form-input--error': formError }"
               placeholder="e.g. DevFlow API"
               required
             />
@@ -132,11 +146,15 @@
             />
           </div>
 
+          <div v-if="formError" class="form-error-msg">
+            {{ formError }}
+          </div>
+
           <div class="modal-actions">
             <button
               type="button"
               class="btn-ghost"
-              @click="showCreateModal = false"
+              @click="closeCreateModal"
             >
               Cancel
             </button>
@@ -164,47 +182,79 @@ definePageMeta({
   middleware: 'auth',
 })
 
-const projectStore    = useProjectStore()
-const statsStore      = useStatsStore()
+const projectStore = useProjectStore()
+const statsStore   = useStatsStore()
+
+// ── Modal state ────────────────────────────────────────────────────
 const showCreateModal = ref(false)
 const creating        = ref(false)
+const formError       = ref<string | null>(null)
+const nameInputRef    = ref<HTMLInputElement>()
 
 const form = reactive({
   name:        '',
   description: '',
 })
 
+// ── Lifecycle ──────────────────────────────────────────────────────
 onMounted(async () => {
-  // DSA — parallel fetching using Promise.all:
-  // Both requests are sent simultaneously rather than sequentially.
-  // Sequential: O(t1 + t2) total wait time.
-  // Parallel:   O(max(t1, t2)) total wait time.
-  // Same concept as parallel array processing — do independent
-  // operations simultaneously rather than one after another.
+  // DSA — Parallel fetch: O(max(t1, t2)) instead of O(t1 + t2)
   await Promise.all([
     projectStore.fetchProjects(),
     statsStore.fetchStats(),
   ])
 })
 
+// ── Modal helpers ──────────────────────────────────────────────────
+function openCreateModal(): void {
+  form.name        = ''
+  form.description = ''
+  formError.value  = null
+  showCreateModal.value = true
+
+  // Focus the name input after the modal renders
+  nextTick(() => nameInputRef.value?.focus())
+}
+
+function closeCreateModal(): void {
+  if (creating.value) return  // don't close while submitting
+  showCreateModal.value = false
+  form.name        = ''
+  form.description = ''
+  formError.value  = null
+}
+
+// ── Create project ─────────────────────────────────────────────────
 async function handleCreate(): Promise<void> {
-  if (!form.name.trim()) return
-  creating.value = true
+  if (!form.name.trim()) {
+    formError.value = 'Project name is required.'
+    return
+  }
+
+  creating.value  = true
+  formError.value = null
 
   try {
     await projectStore.createProject({
-      name:        form.name,
-      description: form.description || undefined,
+      name:        form.name.trim(),
+      description: form.description.trim() || undefined,
     })
 
-    // Refresh stats after creating a project
-    await statsStore.fetchStats()
-
+    // ── SUCCESS: close modal and refresh stats ──────────────────
+    // This is the fix: showCreateModal is set to false immediately
+    // after a successful create, then we reset the form.
     showCreateModal.value = false
-    form.name        = ''
-    form.description = ''
-  } catch (err) {
-    console.error('Failed to create project:', err)
+    form.name             = ''
+    form.description      = ''
+
+    // Refresh stats in the background — don't await so UI stays snappy
+    statsStore.fetchStats()
+
+  } catch (err: any) {
+    // ── FAILURE: show error inside the modal, do NOT close it ───
+    formError.value = err?.data?.message
+      ?? err?.data?.errors?.name?.[0]
+      ?? 'Failed to create project. Please try again.'
   } finally {
     creating.value = false
   }
@@ -235,7 +285,7 @@ function formatDate(dateString: string): string {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: 1fr 300px;
   gap: 20px;
   align-items: start;
 }
@@ -261,7 +311,7 @@ function formatDate(dateString: string): string {
 
 .projects-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
 }
 
@@ -328,14 +378,15 @@ function formatDate(dateString: string): string {
   gap: 8px;
 }
 
-.loading-msg,
-.error-msg {
+.state-msg {
   padding: 16px 0;
   font-size: 13px;
   color: #9ca3af;
 }
 
-.error-msg { color: #dc2626; }
+.state-msg--error {
+  color: #dc2626;
+}
 
 .empty-state {
   padding: 30px;
@@ -361,13 +412,39 @@ function formatDate(dateString: string): string {
   border-radius: 12px;
   padding: 24px;
   width: 420px;
-  max-width: 90vw;
+  max-width: 92vw;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
 }
 
 .modal-title {
   font-size: 15px;
   font-weight: 500;
-  margin-bottom: 16px;
+  color: #111827;
+}
+
+.modal-close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s;
+}
+
+.modal-close:hover {
+  background: #f3f4f6;
+  color: #374151;
 }
 
 .form-group {
@@ -377,11 +454,15 @@ function formatDate(dateString: string): string {
 .form-label {
   display: block;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.4px;
   color: #6b7280;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
+}
+
+.required {
+  color: #ef4444;
 }
 
 .form-input {
@@ -394,11 +475,25 @@ function formatDate(dateString: string): string {
   background: #f9fafb;
   outline: none;
   resize: vertical;
+  transition: border-color 0.15s;
 }
 
 .form-input:focus {
   border-color: #6b7280;
   background: #ffffff;
+}
+
+.form-input--error {
+  border-color: #ef4444;
+}
+
+.form-error-msg {
+  font-size: 12px;
+  color: #ef4444;
+  background: #fee2e2;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
 }
 
 .modal-actions {
@@ -437,6 +532,7 @@ function formatDate(dateString: string): string {
   border-radius: 6px;
   font-size: 13px;
   cursor: pointer;
+  transition: background 0.1s;
 }
 
 .btn-ghost:hover {

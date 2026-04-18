@@ -8,14 +8,16 @@
       <!-- Page header -->
       <div class="project-header">
         <div class="project-header-left">
-          <NuxtLink to="/projects" class="back-link">
+          <NuxtLink to="/" class="back-link">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M9 2L4 7l5 5"/>
             </svg>
-            Projects
+            Dashboard
           </NuxtLink>
           <h2 class="project-name">{{ project.name }}</h2>
-          <p v-if="project.description" class="project-desc">{{ project.description }}</p>
+          <p v-if="project.description" class="project-desc">
+            {{ project.description }}
+          </p>
         </div>
         <button class="btn-primary" @click="openCreateModal('todo')">
           + New task
@@ -35,57 +37,68 @@
         </div>
         <div class="stat-divider" />
         <div class="stat-item">
-          <span class="stat-num" style="color:#378add">{{ taskStore.inProgressTasks.length }}</span>
+          <span class="stat-num" style="color:#378add">
+            {{ taskStore.inProgressTasks.length }}
+          </span>
           <span class="stat-label">In progress</span>
         </div>
         <div class="stat-divider" />
         <div class="stat-item">
-          <span class="stat-num" style="color:#1d9e75">{{ taskStore.doneTasks.length }}</span>
+          <span class="stat-num" style="color:#1d9e75">
+            {{ taskStore.doneTasks.length }}
+          </span>
           <span class="stat-label">Done</span>
         </div>
         <template v-if="taskStore.overdueCount > 0">
           <div class="stat-divider" />
           <div class="stat-item">
-            <span class="stat-num" style="color:#ef4444">{{ taskStore.overdueCount }}</span>
+            <span class="stat-num" style="color:#ef4444">
+              {{ taskStore.overdueCount }}
+            </span>
             <span class="stat-label">Overdue</span>
           </div>
         </template>
       </div>
 
-      <!-- Filter bar -->
-      <!-- DSA: filters state is synced to the URL — the URL is a hash map
-           of active filter params. Sharing the URL shares the exact filter state. -->
-      <TaskFiltersBar
-        :filters="filters"
-        :total-count="taskStore.totalCount"
-        @reset="resetFilters"
-      />
+      <!-- Main content grid: kanban + leaderboard sidebar -->
+      <div class="content-grid">
 
-      <!-- Loading indicator when filters change -->
-      <div v-if="taskStore.loading" class="loading-overlay">
-        Filtering...
+        <!-- Kanban board column -->
+        <div class="kanban-column">
+          <TaskFiltersBar
+            :filters="filters"
+            :total-count="taskStore.totalCount"
+            @reset="resetFilters"
+          />
+
+          <div v-if="taskStore.loading" class="loading-overlay">
+            Filtering tasks...
+          </div>
+
+          <KanbanBoard
+            v-else
+            :project-id="project.id"
+            @add-task="openCreateModal"
+            @delete-task="handleDeleteTask"
+          />
+
+          <div v-if="taskStore.hasMore" class="load-more-wrap">
+            <button
+              class="load-more-btn"
+              :disabled="taskStore.loadingMore"
+              @click="taskStore.fetchMore(project.id, filters)"
+            >
+              {{ taskStore.loadingMore ? 'Loading...' : 'Load more tasks' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Leaderboard sidebar -->
+        <div class="sidebar-column">
+          <Leaderboard :project-id="project.id" />
+        </div>
+
       </div>
-
-      <!-- Kanban board -->
-      <KanbanBoard
-        v-else
-        :project-id="project.id"
-        @add-task="openCreateModal"
-        @delete-task="handleDeleteTask"
-      />
-
-      <!-- Load more button (cursor pagination) -->
-      <!-- DSA: fetches the next page using the cursor token — O(log n) lookup -->
-      <div v-if="taskStore.hasMore" class="load-more-wrap">
-        <button
-          class="load-more-btn"
-          :disabled="taskStore.loadingMore"
-          @click="taskStore.fetchMore(project.id, filters)"
-        >
-          {{ taskStore.loadingMore ? 'Loading...' : 'Load more tasks' }}
-        </button>
-      </div>
-
     </div>
 
     <!-- Create task modal -->
@@ -100,30 +113,27 @@
 </template>
 
 <script setup lang="ts">
-definePageMeta({
-  layout:     'default',
-  // middleware: 'auth',
-})
-
 import { useProjectStore }  from '~/stores/projects'
 import { useTaskStore }     from '~/stores/tasks'
 import { useTaskFilters }   from '~/composables/useTaskFilters'
 import type { Project, TaskStatus } from '~/types'
 
-
+definePageMeta({
+  layout:     'default',
+  middleware: 'auth',
+})
 
 const route        = useRoute()
 const projectStore = useProjectStore()
 const taskStore    = useTaskStore()
 
-const projectId              = computed(() => Number(route.params.id))
-const project                = ref<Project | null>(null)
-const loading                = ref(true)
-const error                  = ref<string | null>(null)
-const showModal              = ref(false)
-const modalDefaultStatus     = ref<TaskStatus>('todo')
+const projectId          = computed(() => Number(route.params.id))
+const project            = ref<Project | null>(null)
+const loading            = ref(true)
+const error              = ref<string | null>(null)
+const showModal          = ref(false)
+const modalDefaultStatus = ref<TaskStatus>('todo')
 
-// useTaskFilters wires filter state, URL sync, and debounced fetch
 const { filters, resetFilters } = useTaskFilters(projectId.value)
 
 onMounted(async () => {
@@ -132,7 +142,7 @@ onMounted(async () => {
       await projectStore.fetchProjects()
     }
 
-    // DSA — O(1) hash map lookup (upgraded from O(n) linear search in Day 2)
+    // DSA — O(1) hash map lookup
     project.value = projectStore.findById(projectId.value) ?? null
 
     if (!project.value) {
@@ -173,7 +183,7 @@ async function handleDeleteTask(taskId: number): Promise<void> {
 .state-msg {
   padding: 20px;
   font-size: 13px;
-  color: #6b7280;
+  color: #9ca3af;
 }
 
 .state-msg--error {
@@ -272,6 +282,32 @@ async function handleDeleteTask(taskId: number): Promise<void> {
   background: #e5e7eb;
 }
 
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar-column {
+    order: -1;
+  }
+}
+
+.kanban-column {
+  min-width: 0;
+}
+
+.sidebar-column {
+  position: sticky;
+  top: 70px;
+}
+
 .loading-overlay {
   padding: 40px;
   text-align: center;
@@ -282,11 +318,11 @@ async function handleDeleteTask(taskId: number): Promise<void> {
 .load-more-wrap {
   display: flex;
   justify-content: center;
-  margin-top: 20px;
+  margin-top: 16px;
 }
 
 .load-more-btn {
-  padding: 9px 20px;
+  padding: 8px 18px;
   border: 1px solid #e5e7eb;
   border-radius: 7px;
   background: #ffffff;
