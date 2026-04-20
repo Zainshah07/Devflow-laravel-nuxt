@@ -21,6 +21,7 @@ class AuthController extends Controller
     /**
      * Register a new user and issue tokens.
      */
+
     public function register(RegisterRequest $request): JsonResponse
     {
         $user = User::create([
@@ -37,6 +38,7 @@ class AuthController extends Controller
     /**
      * Authenticate an existing user and issue tokens.
      */
+     
     public function login(LoginRequest $request): JsonResponse
     {
         $user = User::where('email', $request->validated('email'))->first();

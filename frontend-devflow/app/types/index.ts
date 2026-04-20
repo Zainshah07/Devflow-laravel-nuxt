@@ -116,3 +116,20 @@ export interface AuthResponse {
     token_type:   string
   }
 }
+
+// ── Dependency graph types ───────────────────────────────────────────
+
+export interface TaskGraphNode {
+  id:           string
+  title:        string
+  status:       TaskStatus
+  priority:     TaskPriority
+  is_overdue:   boolean
+  dependencies: string[]  // array of task IDs this task depends on
+}
+
+export interface DependencyEdge {
+  id:     string
+  source: string  // depends_on_task_id (must complete first)
+  target: string  // task_id (waiting for the dependency)
+}

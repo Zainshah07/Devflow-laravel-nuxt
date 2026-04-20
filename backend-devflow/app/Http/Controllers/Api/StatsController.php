@@ -31,6 +31,17 @@ class StatsController extends Controller
             // This is the same optimization as BFS fetching an entire
             // level at once instead of visiting each node individually.
             // ─────────────────────────────────────────────────────────
+                  // ─────────────────────────────────────────────────────────
+            // DSA — Aggregate query: single-pass multi-value computation
+            //
+            // Instead of running 4 separate COUNT queries for each status,
+            // one GROUP BY query counts all statuses in a single table scan.
+            // This is O(n) rather than O(4n) — same asymptotic complexity
+            // but 4x fewer database round trips.
+            //
+            // The replica connection is used for all reads here since
+            // stats are read-only and eventual consistency is acceptable.
+            // ─────────────────────────────────────────────────────────
             $taskCounts = Task::where('created_by', $userId)
                 ->select('status', DB::raw('COUNT(*) as count'))
                 ->groupBy('status')
@@ -38,9 +49,9 @@ class StatsController extends Controller
                 ->toArray();
 
             $totalTasks    = array_sum($taskCounts);
-            $completedTasks = $taskCounts['done'] ?? 0;
-            $todoCounts     = $taskCounts['todo'] ?? 0;
-            $inProgressCount = $taskCounts['in_progress'] ?? 0;
+            $completedTasks  = (int) ($taskCounts['done']        ?? 0);
+            $todoCount       = (int) ($taskCounts['todo']        ?? 0);
+            $inProgressCount = (int) ($taskCounts['in_progress'] ?? 0);
 
             // DSA — Array filter predicate with index:
             // overdueCount uses scopeOverdue which targets the
@@ -60,6 +71,18 @@ class StatsController extends Controller
             // Per-project completion — one query with aggregation
             // DSA: selectRaw with GROUP BY = partition array by key
             // and aggregate each partition simultaneously
+                // ─────────────────────────────────────────────────────────
+            // DSA — Single-pass multi-aggregate with CASE WHEN:
+            // Computes total_tasks and done_tasks for every project
+            // in one SQL query using conditional aggregation.
+            //
+            // Without this: 1 query per project × N projects = N+1
+            // With this: always exactly 1 query regardless of N
+            //
+            // SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) is
+            // equivalent to array.filter(t => t.status === 'done').length
+            // but computed inside the database engine in one pass.
+            // ─────────────────────────────────────────────────────────
             $projectStats = Project::where('user_id', $userId)
                 ->select([
                     'projects.id',
@@ -69,6 +92,7 @@ class StatsController extends Controller
                 ])
                 ->leftJoin('tasks', 'tasks.project_id', '=', 'projects.id')
                 ->groupBy('projects.id', 'projects.name')
+                ->orderByDesc('total_tasks')
                 ->get()
                 ->map(fn ($p) => [
                     'id'              => $p->id,
@@ -77,13 +101,13 @@ class StatsController extends Controller
                     'done_tasks'      => (int) $p->done_tasks,
                     'completion_rate' => $p->total_tasks > 0
                         ? round(($p->done_tasks / $p->total_tasks) * 100, 1)
-                        : 0,
+                        : 0.0,
                 ]);
 
             return [
                 'total_tasks'      => $totalTasks,
                 'completed_tasks'  => $completedTasks,
-                'todo_tasks'       => $todoCounts,
+                'todo_tasks'       => $todoCount,
                 'in_progress_tasks' => $inProgressCount,
                 'overdue_tasks'    => $overdueCount,
                 'completion_rate'  => $completionRate,

@@ -80,4 +80,28 @@ class Task extends Model
     {
         return $query->where('project_id', $projectId);
     }
+
+    // Tasks that this task depends on (must be done before this task)
+    // DSA: this is the outgoing edges from a node in the directed graph
+    public function dependencies()
+    {
+        return $this->belongsToMany(
+            Task::class,
+            'task_dependencies',
+            'task_id',           // this task's foreign key in pivot
+            'depends_on_task_id' // the dependency's foreign key in pivot
+        );
+    }
+
+    // Tasks that depend on this task (are blocked by this task)
+    // DSA: this is the incoming edges to a node in the directed graph
+    public function dependents()
+    {
+        return $this->belongsToMany(
+            Task::class,
+            'task_dependencies',
+            'depends_on_task_id', // this task's foreign key in pivot
+            'task_id'             // the dependent's foreign key in pivot
+        );
+    }
 }

@@ -15,6 +15,14 @@
             Dashboard
           </NuxtLink>
           <h2 class="project-name">{{ project.name }}</h2>
+          <!-- Inside the project-header-left div, after the project-name -->
+          <NuxtLink
+            :to="`/projects/${project.id}/graph`"
+            class="graph-link"
+          >
+            View dependency graph →
+          </NuxtLink>
+
           <p v-if="project.description" class="project-desc">
             {{ project.description }}
           </p>
@@ -245,6 +253,16 @@ async function handleDeleteTask(taskId: number): Promise<void> {
 
 .btn-primary:hover {
   opacity: 0.85;
+}
+
+.graph-link {
+  font-size: 12px;
+  color: #378add;
+  transition: opacity 0.1s;
+}
+
+.graph-link:hover {
+  opacity: 0.75;
 }
 
 .stats-bar {

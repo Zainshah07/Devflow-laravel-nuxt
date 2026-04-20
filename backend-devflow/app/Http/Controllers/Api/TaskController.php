@@ -28,8 +28,34 @@ class TaskController extends Controller
     public function index(Request $request, Project $project)
 {
     $this->authorize('view', $project);
+            // ─────────────────────────────────────────────────────────────
+        // DSA — Hash Map cache-aside pattern:
+        // 1. Build the cache key from project ID + query params hash
+        // 2. Check Redis — if key exists return it immediately (O(1))
+        // 3. On miss: run the full DB query, store in Redis, return
+        //
+        // The cache key includes all query params so different filter
+        // combinations each get their own cache entry — same concept
+        // as using a composite key in a hash map problem.
+        // ─────────────────────────────────────────────────────────────
 
-    $cacheKey = $this->cache->buildKey($project->id, $request->query());
+        $cacheKey = $this->cache->buildKey($project->id, $request->query());
+
+        // ─────────────────────────────────────────────────────────────
+        // DSA — Binary Search in action:
+        // allowedSorts maps to ORDER BY clauses that use B-tree indexes.
+        // Sorting by due_date uses idx_tasks_due_date — O(log n) seek.
+        // Without the index MySQL would sort all rows in memory — O(n log n).
+        //
+        // DSA — Hash Map lookup:
+        // AllowedFilter::scope('search') calls scopeSearch which uses
+        // MATCH AGAINST — the FULLTEXT inverted index hash map.
+        //
+        // DSA — Cursor Pagination O(log n) vs O(n):
+        // cursorPaginate uses the primary key index to jump to the
+        // correct starting row. Offset-based paginate scans and
+        // discards all previous rows on every page request.
+        // ─────────────────────────────────────────────────────────────
 
     $tasks = $this->cache->remember(
         $cacheKey,

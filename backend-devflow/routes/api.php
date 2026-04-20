@@ -1,54 +1,79 @@
 <?php
 
-use App\Http\Controllers\Api\ProjectController;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\TaskAssignmentController;
-use App\Http\Controllers\Api\StatsController;
 use App\Http\Controllers\Api\LeaderboardController;
+use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\StatsController;
+use App\Http\Controllers\Api\TaskAssignmentController;
+use App\Http\Controllers\Api\TaskController;
+use App\Http\Controllers\Api\TaskDependencyController;
+use Illuminate\Support\Facades\Route;
 
-
-
+// ── Health check (public) ────────────────────────────────────────────
 Route::get('/health', function () {
+    try {
+        \Illuminate\Support\Facades\DB::select('SELECT 1');
+        $dbStatus = 'connected';
+    } catch (\Exception $e) {
+        $dbStatus = 'error';
+    }
+
+    try {
+        \Illuminate\Support\Facades\DB::connection('mysql_replica')->select('SELECT 1');
+        $replicaStatus = 'connected';
+    } catch (\Exception $e) {
+        $replicaStatus = 'error';
+    }
+
+    try {
+        \Illuminate\Support\Facades\Redis::ping();
+        $redisStatus = 'connected';
+    } catch (\Exception $e) {
+        $redisStatus = 'error';
+    }
+
+    $allOk = $dbStatus === 'connected' && $redisStatus === 'connected';
+
     return response()->json([
-        'status'    => 'ok',
+        'status'    => $allOk ? 'ok' : 'degraded',
+        'server'    => gethostname(),
         'timestamp' => now()->toISOString(),
-    ]);
+        'checks'    => [
+            'database'         => $dbStatus,
+            'database_replica' => $replicaStatus,
+            'redis'            => $redisStatus,
+        ],
+    ], $allOk ? 200 : 503);
 });
 
-// ── Auth routes (public) ────────────────────────────────────────────
-// DSA — Stack: these routes sit outside the auth middleware stack.
-// Requests reach the controller directly without passing through
-// the Sanctum token verification layer.
+// ── Auth routes (public) ─────────────────────────────────────────────
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login',    [AuthController::class, 'login']);
     Route::post('/refresh',  [AuthController::class, 'refresh']);
 });
 
-// ── Protected routes ────────────────────────────────────────────────
-// DSA — Stack: auth:sanctum sits at the top of the middleware stack
-// for all routes in this group. Every request must pass through it
-// before reaching any controller. Invalid tokens short-circuit here.
+// ── Protected routes ─────────────────────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me',      [AuthController::class, 'me']);
 
-     // Stats endpoint
-    Route::get('/stats', [StatsController::class, 'index']);
-
+    // Stats and leaderboard
+    Route::get('/stats',                          [StatsController::class,      'index']);
     Route::get('/projects/{project}/leaderboard', [LeaderboardController::class, 'index']);
 
     // Task assignment
-    Route::post('/tasks/{task}/assign',            [TaskAssignmentController::class, 'store']);
-    Route::delete('/tasks/{task}/assign/{user}',   [TaskAssignmentController::class, 'destroy']);
+    Route::post('/tasks/{task}/assign',           [TaskAssignmentController::class, 'store']);
+    Route::delete('/tasks/{task}/assign/{user}',  [TaskAssignmentController::class, 'destroy']);
 
+    // Task dependencies
+    Route::get('/tasks/{task}/dependencies',                         [TaskDependencyController::class, 'index']);
+    Route::post('/tasks/{task}/dependencies',                        [TaskDependencyController::class, 'store']);
+    Route::delete('/tasks/{task}/dependencies/{dependency}',         [TaskDependencyController::class, 'destroy']);
+    Route::get('/projects/{projectId}/dependency-graph',             [TaskDependencyController::class, 'projectGraph']);
+
+    // Projects and tasks
     Route::apiResource('projects', ProjectController::class);
     Route::apiResource('projects.tasks', TaskController::class)->shallow();
 });
-
-
-

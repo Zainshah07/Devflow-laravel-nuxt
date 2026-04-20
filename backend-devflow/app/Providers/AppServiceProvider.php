@@ -10,6 +10,7 @@ use App\Services\TokenService;
 use App\Observers\TaskObserver;
 use App\Models\Task;
 use App\Services\TaskCacheService;
+use App\Services\TaskDependencyService;
 
 
 
@@ -24,6 +25,7 @@ class AppServiceProvider extends ServiceProvider
         // is reused across the request lifecycle
         $this->app->singleton(TokenService::class);
         $this->app->singleton(TaskCacheService::class);
+        $this->app->singleton(TaskDependencyService::class);
     }
 
     /**
