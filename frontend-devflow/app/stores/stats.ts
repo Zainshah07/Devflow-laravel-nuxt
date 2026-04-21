@@ -32,13 +32,11 @@ export const useStatsStore = defineStore('stats', () => {
     (stats.value?.overdue_tasks ?? 0) > 0
   )
 
-  // DSA — Array sort O(n log n):
-  // Sort project stats by total_tasks descending so the most
-  // active projects appear first in the list.
+  // DSA — Array already sorted by backend (orderByDesc total_tasks)
+  // No client-side sort needed. Backend does it in the SQL query
+  // so we get O(1) access to the sorted list here.
   const sortedProjectStats = computed(() =>
-    [...(stats.value?.project_stats ?? [])].sort(
-      (a, b) => b.total_tasks - a.total_tasks
-    )
+    stats.value?.project_stats ?? []
   )
 
   function clearStats(): void {

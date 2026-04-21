@@ -77,6 +77,11 @@ services:
     image: mysql:8
     container_name: devflow_mysql
     restart: always
+    command: >
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --binlog-do-db=devflow
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: devflow
@@ -96,8 +101,13 @@ services:
   mysql_replica:
     image: mysql:8
     container_name: devflow_mysql_replica
+    restart: always
     ports:
       - "3307:3306"
+    command: >
+      --server-id=2
+      --relay-log=mysql-relay-bin
+      --read-only=1
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: devflow
@@ -109,7 +119,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    restart: unless-stopped
     networks:
       - devflow_network
 

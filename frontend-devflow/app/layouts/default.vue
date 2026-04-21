@@ -29,23 +29,54 @@
 
       <div class="sidebar-bottom">
         <div class="user-row">
-          <div class="user-avatar">
-            {{ userInitials }}
-          </div>
+          <div class="user-avatar">{{ userInitials }}</div>
           <div class="user-info">
             <span class="user-name">{{ authStore.user?.name ?? 'Loading...' }}</span>
             <span class="user-email">{{ authStore.user?.email }}</span>
           </div>
         </div>
-        <button class="logout-btn" @click="handleLogout">
-          Sign out
-        </button>
+        <button class="logout-btn" @click="handleLogout">Sign out</button>
       </div>
     </aside>
 
     <div class="main-wrapper">
       <header class="topbar">
         <h1 class="page-title">{{ pageTitle }}</h1>
+
+        <div class="topbar-right">
+          <!-- Server status badges — Day 8 + 9 addition -->
+          <div class="status-cluster">
+            <!-- Backend health -->
+            <div
+              class="status-pill"
+              :class="serverStatus.isHealthy.value ? 'status-pill--ok' : 'status-pill--error'"
+              :title="'Server: ' + (serverStatus.serverName.value ?? 'unknown')"
+            >
+              <span class="status-dot" />
+              <span>{{ serverStatus.isHealthy.value ? 'API online' : 'API offline' }}</span>
+            </div>
+
+            <!-- Replica status — Day 9 -->
+            <div
+              v-if="serverStatus.replicaConnected.value"
+              class="status-pill status-pill--replica"
+              title="MySQL read replica connected"
+            >
+              <span class="status-dot" />
+              <span>replica</span>
+            </div>
+
+            <!-- Redis status -->
+            <div
+              v-if="serverStatus.redisConnected.value"
+              class="status-pill status-pill--redis"
+              title="Redis connected"
+            >
+              <span class="status-dot" />
+              <span>redis</span>
+            </div>
+          </div>
+        </div>
       </header>
 
       <main class="page-body">
@@ -56,11 +87,13 @@
 </template>
 
 <script setup lang="ts">
-import { useAuthStore } from '~/stores/auth'
+import { useAuthStore }     from '~/stores/auth'
+import { useServerStatus }  from '~/composables/useServerStatus'
 
-const route     = useRoute()
-const router    = useRouter()
-const authStore = useAuthStore()
+const route        = useRoute()
+const router       = useRouter()
+const authStore    = useAuthStore()
+const serverStatus = useServerStatus()
 
 const pageTitles: Record<string, string> = {
   '/':         'Dashboard',
@@ -68,18 +101,18 @@ const pageTitles: Record<string, string> = {
 }
 
 const pageTitle = computed(() => {
-  if (route.path.startsWith('/projects/')) return 'Project Board'
+  if (route.path.match(/^\/projects\/\d+\/graph$/)) return 'Dependency Graph'
+  if (route.path.match(/^\/projects\/\d+/))         return 'Project Board'
   return pageTitles[route.path] ?? 'DevFlow'
 })
 
 const userInitials = computed(() => {
   const name = authStore.user?.name ?? ''
-  return name
-    .split(' ')
-    .slice(0, 2)
-    .map(n => n[0])
-    .join('')
-    .toUpperCase() || 'U'
+  return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase() || 'U'
+})
+
+onMounted(() => {
+  serverStatus.fetchStatus()
 })
 
 async function handleLogout(): Promise<void> {
@@ -254,6 +287,7 @@ async function handleLogout(): Promise<void> {
   background: #ffffff;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -263,6 +297,63 @@ async function handleLogout(): Promise<void> {
   font-size: 15px;
   font-weight: 500;
   color: #111827;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-cluster {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-family: monospace;
+  padding: 3px 8px;
+  border-radius: 99px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #9ca3af;
+}
+
+.status-pill--ok {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.status-pill--error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.status-pill--replica {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1e40af;
+}
+
+.status-pill--redis {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
 }
 
 .page-body {

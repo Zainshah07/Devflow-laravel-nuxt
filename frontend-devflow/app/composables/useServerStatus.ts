@@ -1,51 +1,63 @@
-export interface ServerStatus {
-  status:  string
-  server:  string
-  checks:  {
-    database:          string
-    database_replica?: string
-    redis:             string
+export interface HealthCheck {
+  status:   string
+  server:   string
+  checks: {
+    database:           string
+    database_replica?:  string
+    redis:              string
   }
 }
 
 export function useServerStatus() {
-  const status    = ref<ServerStatus | null>(null)
-  const loading   = ref(false)
+  const health  = ref<HealthCheck | null>(null)
+  const loading = ref(false)
+  const error   = ref(false)
 
-  const isHealthy = computed(() =>
-    status.value?.status === 'ok'
-  )
+  const isHealthy = computed(() => health.value?.status === 'ok')
 
-  const serverName = computed(() =>
-    status.value?.server ?? null
+  const serverName = computed(() => health.value?.server ?? null)
+
+  const dbConnected = computed(() =>
+    health.value?.checks?.database === 'connected'
   )
 
   const replicaConnected = computed(() =>
-    status.value?.checks?.database_replica === 'connected'
+    health.value?.checks?.database_replica === 'connected'
+  )
+
+  const redisConnected = computed(() =>
+    health.value?.checks?.redis === 'connected'
   )
 
   async function fetchStatus(): Promise<void> {
     loading.value = true
+    error.value   = false
 
     try {
-      // Call health without the /api prefix
-      const config  = useRuntimeConfig()
-      const baseUrl = config.public.apiBase.replace('/api', '')
+      const config = useRuntimeConfig()
+      // Strip /api suffix to hit the root health endpoint
+      const base   = config.public.apiBase.replace(/\/api$/, '')
 
-      status.value = await $fetch<ServerStatus>(`${baseUrl}/api/health`)
+      health.value = await $fetch<HealthCheck>(`${base}/api/health`, {
+        credentials: 'include',
+      })
     } catch {
-      status.value = null
+      error.value  = true
+      health.value = null
     } finally {
       loading.value = false
     }
   }
 
   return {
-    status,
+    health,
     loading,
+    error,
     isHealthy,
     serverName,
+    dbConnected,
     replicaConnected,
+    redisConnected,
     fetchStatus,
   }
 }
