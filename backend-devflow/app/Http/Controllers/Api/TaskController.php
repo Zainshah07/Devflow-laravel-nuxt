@@ -16,6 +16,10 @@ use Spatie\QueryBuilder\AllowedSort;
 use Spatie\QueryBuilder\QueryBuilder;
 use App\Http\Controllers\Api\StatsController;
 use App\Services\TaskCacheService;
+use App\Events\TaskCreated;
+use App\Events\TaskDeleted;
+use App\Events\TaskStatusChanged;
+use App\Events\TaskUpdated; 
 
 
 
@@ -25,79 +29,45 @@ class TaskController extends Controller
         private readonly TaskCacheService $cache
     ) {}
 
-    public function index(Request $request, Project $project)
+ public function index(Request $request, Project $project)
 {
     $this->authorize('view', $project);
-            // ─────────────────────────────────────────────────────────────
-        // DSA — Hash Map cache-aside pattern:
-        // 1. Build the cache key from project ID + query params hash
-        // 2. Check Redis — if key exists return it immediately (O(1))
-        // 3. On miss: run the full DB query, store in Redis, return
-        //
-        // The cache key includes all query params so different filter
-        // combinations each get their own cache entry — same concept
-        // as using a composite key in a hash map problem.
-        // ─────────────────────────────────────────────────────────────
 
-        $cacheKey = $this->cache->buildKey($project->id, $request->query());
+    $cacheKey = $this->cache->buildKey($project->id, $request->query());
 
-        // ─────────────────────────────────────────────────────────────
-        // DSA — Binary Search in action:
-        // allowedSorts maps to ORDER BY clauses that use B-tree indexes.
-        // Sorting by due_date uses idx_tasks_due_date — O(log n) seek.
-        // Without the index MySQL would sort all rows in memory — O(n log n).
-        //
-        // DSA — Hash Map lookup:
-        // AllowedFilter::scope('search') calls scopeSearch which uses
-        // MATCH AGAINST — the FULLTEXT inverted index hash map.
-        //
-        // DSA — Cursor Pagination O(log n) vs O(n):
-        // cursorPaginate uses the primary key index to jump to the
-        // correct starting row. Offset-based paginate scans and
-        // discards all previous rows on every page request.
-        // ─────────────────────────────────────────────────────────────
-
-    $tasks = $this->cache->remember(
+    $cachedData = $this->cache->remember(
         $cacheKey,
         $project->id,
         function () use ($request, $project) {
-
             $query = QueryBuilder::for(Task::class)
-                // ✅ FIXED (variadic arguments — Spatie v4/v5 change)
                 ->allowedFilters(
                     AllowedFilter::exact('status'),
                     AllowedFilter::exact('priority'),
                     AllowedFilter::scope('search')
                 )
-                ->allowedSorts(
-                    AllowedSort::field('created_at'),
-                    AllowedSort::field('due_date'),
-                    AllowedSort::field('priority'),
-                    AllowedSort::field('title')
-                )
-                ->allowedIncludes('assignees', 'creator', 'project')
+                // ✅ FIXED: Removed the array brackets []
+                ->allowedIncludes('assignees', 'creator', 'project') 
                 ->where('project_id', $project->id)
                 ->with(['assignees', 'creator'])
                 ->defaultSort('-created_at')
                 ->cursorPaginate(20);
 
-            // ✅ CRITICAL FIX: never cache paginator object
+            // Return primitive array to avoid serialization issues in Redis
             return [
-                'data' => $query->items(),
+                'data' => TaskResource::collection($query->getCollection())->resolve(),
                 'next_cursor' => optional($query->nextCursor())->encode(),
                 'prev_cursor' => optional($query->previousCursor())->encode(),
             ];
         }
     );
 
-    // ✅ Convert back to paginator-style API response
-    return TaskResource::collection(collect($tasks['data']))
-        ->additional([
-            'meta' => [
-                'next_cursor' => $tasks['next_cursor'],
-                'prev_cursor' => $tasks['prev_cursor'],
-            ]
-        ]);
+    return response()->json([
+        'data' => $cachedData['data'],
+        'meta' => [
+            'next_cursor' => $cachedData['next_cursor'],
+            'prev_cursor' => $cachedData['prev_cursor'],
+        ]
+    ]);
 }
 
     public function store(StoreTaskRequest $request, Project $project)
@@ -115,13 +85,21 @@ class TaskController extends Controller
         // how many individual cache entries exist for this project
         $this->cache->invalidateProject($project->id);
         StatsController::invalidateCache($request->user()->id);
+
+        // DSA — Observer pattern: broadcast to all project channel subscribers
+    // toOthers() excludes the requesting socket so the sender
+    // does not receive a duplicate update (they already updated optimistically)
+
+    broadcast(new TaskCreated($task->load(['assignees', 'creator', 'project'])))
+        ->toOthers();
+
         $task->load(['assignees', 'creator', 'project']);
 
 
         return response()->json([
             'success'  => true,
             'message'  => 'Task created successfully',
-            'data'     => TaskResource::single($task),
+            'data'     => new TaskResource($task),
         ], 201);
     }
 
@@ -134,7 +112,7 @@ class TaskController extends Controller
         return response()->json([
             'success'  => true,
             'message'  => 'Task fetched successfully',
-            'data'     => TaskResource::single($task),
+            'data'     => new TaskResource($task),
         ], 200);
     }
 
@@ -164,17 +142,29 @@ class TaskController extends Controller
                 ], 422);
             }
         }
+        $oldStatus = $task->status->value;
         $task->update($request->validated());
         // Invalidate cache after every write
         $this->cache->invalidateProject($project->id);
+        $statusChanged = $task->wasChanged('status');
         
         StatsController::invalidateCache($request->user()->id);
-        $task->fresh()->load(['assignees', 'creator', 'project']);
+       $freshTask = $task->fresh()->load(['assignees', 'creator', 'project']);
+        // Broadcast status change separately for targeted UI updates
+        if ($statusChanged) {
+            broadcast(new TaskStatusChanged(
+                $freshTask,
+                $oldStatus,
+                $freshTask->status->value
+            ))->toOthers();
+        } else {
+            broadcast(new TaskUpdated($freshTask))->toOthers();
+        }
 
         return response()->json([
             'success'  => true,
             'message'  => 'Task updated successfully',
-            'data'     => TaskResource::single($task),
+            'data'     => new TaskResource($freshTask),
         ], 200);
     }
 
@@ -184,6 +174,8 @@ class TaskController extends Controller
         $task->delete();
           $this->cache->invalidateProject($project->id);
         StatsController::invalidateCache($request->user()->id);
+        
+        broadcast(new TaskDeleted($taskId, $projectId))->toOthers();
 
         return response()->json([
             'success'  => true,

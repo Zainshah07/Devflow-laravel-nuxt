@@ -15,21 +15,24 @@
             Dashboard
           </NuxtLink>
           <h2 class="project-name">{{ project.name }}</h2>
-          <!-- Inside the project-header-left div, after the project-name -->
-          <NuxtLink
-            :to="`/projects/${project.id}/graph`"
-            class="graph-link"
-          >
-            View dependency graph →
-          </NuxtLink>
-
           <p v-if="project.description" class="project-desc">
             {{ project.description }}
           </p>
+          <NuxtLink :to="`/projects/${project.id}/graph`" class="graph-link">
+            View dependency graph →
+          </NuxtLink>
         </div>
-        <button class="btn-primary" @click="openCreateModal('todo')">
-          + New task
-        </button>
+
+        <div class="header-right">
+          <!-- Presence bar — who is viewing this project -->
+          <PresenceBar
+            :users="realtime.onlineUsers.value"
+            :connected="realtime.isConnected.value"
+          />
+          <button class="btn-primary" @click="openCreateModal('todo')">
+            + New task
+          </button>
+        </div>
       </div>
 
       <!-- Stats bar -->
@@ -68,10 +71,9 @@
         </template>
       </div>
 
-      <!-- Main content grid: kanban + leaderboard sidebar -->
+      <!-- Main content: kanban + leaderboard -->
       <div class="content-grid">
 
-        <!-- Kanban board column -->
         <div class="kanban-column">
           <TaskFiltersBar
             :filters="filters"
@@ -101,7 +103,6 @@
           </div>
         </div>
 
-        <!-- Leaderboard sidebar -->
         <div class="sidebar-column">
           <Leaderboard :project-id="project.id" />
         </div>
@@ -109,7 +110,6 @@
       </div>
     </div>
 
-    <!-- Create task modal -->
     <CreateTaskModal
       v-if="showModal && project"
       :project-id="project.id"
@@ -121,9 +121,10 @@
 </template>
 
 <script setup lang="ts">
-import { useProjectStore }  from '~/stores/projects'
-import { useTaskStore }     from '~/stores/tasks'
-import { useTaskFilters }   from '~/composables/useTaskFilters'
+import { useProjectStore }     from '~/stores/projects'
+import { useTaskStore }        from '~/stores/tasks'
+import { useTaskFilters }      from '~/composables/useTaskFilters'
+import { useRealtimeTasks }    from '~/composables/useRealtimeTasks'
 import type { Project, TaskStatus } from '~/types'
 
 definePageMeta({
@@ -144,13 +145,15 @@ const modalDefaultStatus = ref<TaskStatus>('todo')
 
 const { filters, resetFilters } = useTaskFilters(projectId.value)
 
+// DSA — Graph subscription: subscribe to the project's real-time channel
+const realtime = useRealtimeTasks(projectId.value)
+
 onMounted(async () => {
   try {
     if (projectStore.projects.length === 0) {
       await projectStore.fetchProjects()
     }
 
-    // DSA — O(1) hash map lookup
     project.value = projectStore.findById(projectId.value) ?? null
 
     if (!project.value) {
@@ -159,6 +162,10 @@ onMounted(async () => {
     }
 
     await taskStore.fetchTasks(projectId.value, filters)
+
+    // Subscribe to real-time updates after tasks are loaded
+    realtime.subscribe()
+
   } catch (err: any) {
     error.value = err?.data?.message ?? 'Failed to load project.'
   } finally {
@@ -167,6 +174,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  // DSA — Set cleanup: remove this socket from the channel member set
+  realtime.unsubscribe()
   taskStore.clearTasks()
 })
 
@@ -238,6 +247,23 @@ async function handleDeleteTask(taskId: number): Promise<void> {
   color: #6b7280;
 }
 
+.graph-link {
+  font-size: 12px;
+  color: #378add;
+  transition: opacity 0.1s;
+}
+
+.graph-link:hover {
+  opacity: 0.75;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
 .btn-primary {
   padding: 8px 14px;
   background: #111827;
@@ -253,16 +279,6 @@ async function handleDeleteTask(taskId: number): Promise<void> {
 
 .btn-primary:hover {
   opacity: 0.85;
-}
-
-.graph-link {
-  font-size: 12px;
-  color: #378add;
-  transition: opacity 0.1s;
-}
-
-.graph-link:hover {
-  opacity: 0.75;
 }
 
 .stats-bar {
@@ -311,7 +327,6 @@ async function handleDeleteTask(taskId: number): Promise<void> {
   .content-grid {
     grid-template-columns: 1fr;
   }
-
   .sidebar-column {
     order: -1;
   }

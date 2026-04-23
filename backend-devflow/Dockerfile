@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y \
     autoconf \
     g++ \
     make \
-    && docker-php-ext-install pdo_mysql mbstring zip bcmath
+    # Added pcntl to the install list below
+    && docker-php-ext-install pdo_mysql mbstring zip bcmath pcntl
 
 # Install Redis extension
 RUN pecl install redis \
