@@ -26,7 +26,12 @@ class UpdateTaskRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'title'       => ['sometimes', 'string', 'max:255'],
+            'title'       => ['sometimes', 'string', 'max:255', function ($attribute, $value, $fail) {
+        if ($value !== strip_tags($value)) {
+            $fail('The title contains forbidden HTML tags.');
+        }
+    },
+    ],
             'description' => ['nullable', 'string', 'max:2000'],
             'priority'    => ['sometimes', Rule::in(TaskPriority::values())],
             'due_date'    => ['nullable', 'date'],

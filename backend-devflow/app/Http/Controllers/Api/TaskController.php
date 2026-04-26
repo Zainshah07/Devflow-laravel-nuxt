@@ -10,7 +10,8 @@ use App\Models\Project;
 use App\Http\Requests\StoreTaskRequest;
 use App\Http\Requests\UpdateTaskRequest;
 use App\Enums\TaskStatus;
-use Illuminate\Http\Resources\JsonResponse;
+// use Illuminate\Http\Resources\JsonResponse;
+use Illuminate\Http\JsonResponse;
 use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\AllowedSort;
 use Spatie\QueryBuilder\QueryBuilder;
@@ -118,7 +119,7 @@ class TaskController extends Controller
 
     public function update(UpdateTaskRequest $request, Project $project, Task $task): JsonResponse|TaskResource
     {
-        $this->authorize('view', $project);
+        $this->authorize('update', $task->project);
 
         // DSA — Directed Graph traversal:
         // The status field represents a node in a directed graph.
@@ -145,7 +146,7 @@ class TaskController extends Controller
         $oldStatus = $task->status->value;
         $task->update($request->validated());
         // Invalidate cache after every write
-        $this->cache->invalidateProject($project->id);
+        $this->cache->invalidateProject($task->project_id);
         $statusChanged = $task->wasChanged('status');
         
         StatsController::invalidateCache($request->user()->id);

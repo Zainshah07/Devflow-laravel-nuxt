@@ -25,7 +25,11 @@ class StoreTaskRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'title'       => ['required', 'string', 'max:255'],
+            'title'       => ['required', 'string', 'max:255', function ($attribute, $value, $fail) {
+        if ($value !== strip_tags($value)) {
+            $fail('HTML tags are not allowed.');
+        }
+    },],
             'description' => ['nullable', 'string', 'max:2000'],
             'priority'    => ['required', Rule::in(TaskPriority::values())],
             'due_date'    => ['nullable', 'date', 'after_or_equal:today'],

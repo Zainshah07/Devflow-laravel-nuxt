@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -11,16 +12,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // DSA — Hash Map (Inverted Index):
-        // MySQL FULLTEXT creates an inverted index internally.
-        // Every unique word across title and description becomes a key.
-        // The value is the list of task IDs containing that word.
-        // Searching for "login bug" is two O(1) hash map lookups
-        // followed by a set intersection — exactly like the
-        // frequency map pattern in Two Sum / Group Anagrams.
-       Schema::table('tasks', function (Blueprint $table) {
-            $table->fullText(['title', 'description'], 'tasks_fulltext_search');
-        });
+        // Only add the index if the driver supports FULLTEXT (not SQLite)
+        if (DB::getDriverName() !== 'sqlite') {
+            // DSA — Hash Map (Inverted Index):
+            // MySQL FULLTEXT creates an inverted index internally.
+            // Every unique word across title and description becomes a key.
+            // The value is the list of task IDs containing that word.
+            // Searching for "login bug" is two O(1) hash map lookups
+            // followed by a set intersection — exactly like the
+            // frequency map pattern in Two Sum / Group Anagrams.
+            Schema::table('tasks', function (Blueprint $table) {
+                $table->fullText(['title', 'description'], 'tasks_fulltext_search');
+            });
+        }
     }
 
     /**
@@ -28,8 +32,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('tasks', function (Blueprint $table) {
-            $table->dropFullText('tasks_fulltext_search');
-        });
+        if (DB::getDriverName() !== 'sqlite') {
+            Schema::table('tasks', function (Blueprint $table) {
+                $table->dropFullText('tasks_fulltext_search');
+            });
+        }
     }
 };
