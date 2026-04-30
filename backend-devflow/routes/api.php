@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\TaskAssignmentController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\TaskDependencyController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\ProjectMemberController;
 
 // ── Health check (public) ────────────────────────────────────────────
 Route::get('/health', function () {
@@ -73,6 +74,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/tasks/{task}/dependencies/{dependency}',         [TaskDependencyController::class, 'destroy']);
     Route::get('/projects/{projectId}/dependency-graph',             [TaskDependencyController::class, 'projectGraph']);
 
+    Route::get('/projects/{project}/members',         [ProjectMemberController::class, 'index']);
+    Route::post('/projects/{project}/members',        [ProjectMemberController::class, 'store']);
+    Route::delete('/projects/{project}/members/{user}', [ProjectMemberController::class, 'destroy']);
     // Projects and tasks
     Route::apiResource('projects', ProjectController::class);
     Route::apiResource('projects.tasks', TaskController::class)->shallow();

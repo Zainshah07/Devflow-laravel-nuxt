@@ -1,15 +1,13 @@
 <template>
   <div class="presence-bar">
 
-    <!-- Connection status indicator -->
     <div
       class="connection-dot"
-      :class="connected ? 'connection-dot--live' : 'connection-dot--offline'"
-      :title="connected ? 'Real-time connected' : 'Connecting...'"
+      :class="presenceStore.isConnected ? 'dot--live' : 'dot--offline'"
+      :title="presenceStore.isConnected ? 'Real-time connected' : 'Connecting...'"
     />
 
-    <!-- Online user avatars -->
-    <div v-if="users.length > 0" class="avatars">
+    <div v-if="presenceStore.onlineUsers.length > 0" class="avatars">
       <div
         v-for="user in visibleUsers"
         :key="user.id"
@@ -18,22 +16,20 @@
       >
         {{ initials(user.name) }}
       </div>
-
       <div v-if="extraCount > 0" class="avatar-extra">
         +{{ extraCount }}
       </div>
     </div>
 
-    <!-- Label -->
     <span class="presence-label">
-      <template v-if="users.length === 0">
+      <template v-if="presenceStore.onlineUsers.length === 0">
         No one else online
       </template>
-      <template v-else-if="users.length === 1">
-        {{ users[0].name }} is viewing
+      <template v-else-if="presenceStore.onlineUsers.length === 1">
+        {{ presenceStore.onlineUsers[0].name }} is viewing
       </template>
       <template v-else>
-        {{ users.length }} people viewing
+        {{ presenceStore.onlineUsers.length }} people viewing
       </template>
     </span>
 
@@ -41,16 +37,13 @@
 </template>
 
 <script setup lang="ts">
-const props = defineProps<{
-  users:     Array<{ id: number; name: string }>
-  connected: boolean
-}>()
+import { usePresenceStore } from '~/stores/presence'
 
-// Show max 3 avatars, then "+N" for the rest
-// DSA: slice is O(k) where k = maxVisible — constant time
+const presenceStore = usePresenceStore()
+
 const maxVisible  = 3
-const visibleUsers = computed(() => props.users.slice(0, maxVisible))
-const extraCount   = computed(() => Math.max(0, props.users.length - maxVisible))
+const visibleUsers = computed(() => presenceStore.onlineUsers.slice(0, maxVisible))
+const extraCount   = computed(() => Math.max(0, presenceStore.onlineUsers.length - maxVisible))
 
 function initials(name: string): string {
   return name
@@ -77,12 +70,12 @@ function initials(name: string): string {
   transition: background 0.3s;
 }
 
-.connection-dot--live {
+.dot--live {
   background: #1d9e75;
   box-shadow: 0 0 0 2px #dcfce7;
 }
 
-.connection-dot--offline {
+.dot--offline {
   background: #d1d5db;
 }
 
@@ -92,18 +85,18 @@ function initials(name: string): string {
 }
 
 .avatar-bubble {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: #e6f1fb;
   color: #185fa5;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 2px solid #ffffff;
-  margin-left: -5px;
+  margin-left: -6px;
   flex-shrink: 0;
 }
 
@@ -112,18 +105,18 @@ function initials(name: string): string {
 }
 
 .avatar-extra {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: #f3f4f6;
   color: #6b7280;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 2px solid #ffffff;
-  margin-left: -5px;
+  margin-left: -6px;
 }
 
 .presence-label {

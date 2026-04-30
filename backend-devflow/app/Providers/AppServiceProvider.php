@@ -13,6 +13,7 @@ use App\Services\TaskCacheService;
 use App\Services\TaskDependencyService;
 use Laravel\Sanctum\Sanctum;
 use App\Models\PersonalAccessToken;
+use App\Policies\TaskPolicy;
 
 
 
@@ -36,6 +37,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::policy(Project::class, ProjectPolicy::class);
+        Gate::policy(Task::class, TaskPolicy::class);
         Task::observe(TaskObserver::class);
         Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);
     }

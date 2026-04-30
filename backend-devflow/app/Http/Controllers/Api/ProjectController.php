@@ -23,15 +23,14 @@ class ProjectController extends Controller
     // each one individually.
     
         $user = $request->user();
-        $projects = $user->projects()->withCount('tasks')
-            ->with('owner')
-            ->latest()
-            ->get();
-        return response()->json([
-            'success'  => true,
-            'message'  => 'Projects fetched successfully',
-            'data' => ProjectResource::collection($projects),
-        ], 200);
+        $projects = Project::where('user_id', $user->id)
+        ->orWhereHas('members', fn ($q) => $q->where('user_id', $user->id))
+        ->withCount('tasks')
+        ->with(['owner', 'members:id,name,email'])
+        ->latest()
+        ->get();
+
+        return ProjectResource::collection($projects);
     }
 
     public function store(StoreProjectRequest $request){

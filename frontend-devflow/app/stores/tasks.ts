@@ -17,12 +17,14 @@ export const useTaskStore = defineStore('tasks', () => {
   // Three computed properties = at most 3 × O(n) = O(n) total.
   // Same concept as memoized subproblem results in DP.
   // ─────────────────────────────────────────────────────────────────
-  const byStatus        = computed(() => (status: TaskStatus): Task[] =>
-    tasks.value.filter(t => t.status === status)
-  )
-  const todoTasks       = computed((): Task[] => byStatus.value('todo'))
-  const inProgressTasks = computed((): Task[] => byStatus.value('in_progress'))
-  const doneTasks       = computed((): Task[] => byStatus.value('done'))
+const byStatus = computed(() => (status: TaskStatus): Task[] =>
+  tasks.value.filter(t => t.status === status)
+)
+
+// These must call byStatus.value(status) — not byStatus(status)
+const todoTasks       = computed((): Task[] => byStatus.value('todo'))
+const inProgressTasks = computed((): Task[] => byStatus.value('in_progress'))
+const doneTasks       = computed((): Task[] => byStatus.value('done'))
   const totalCount      = computed(() => tasks.value.length)
   const overdueCount    = computed(() => tasks.value.filter(t => t.is_overdue).length)
 
@@ -153,13 +155,14 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
-  async function deleteTask(projectId: number, taskId: number): Promise<void> {
-    const { destroy } = useApi()
-    await destroy(`/projects/${projectId}/tasks/${taskId}`)
+async function deleteTask(projectId: number, taskId: number): Promise<void> {
+  const { destroy } = useApi()
 
-    // DSA: filter creates a new array — O(n) — excluding the deleted element
-    tasks.value = tasks.value.filter(t => t.id !== taskId)
-  }
+  // Route is /api/tasks/:id (shallow resource — no project prefix)
+  await destroy(`/tasks/${taskId}`)
+
+  tasks.value = tasks.value.filter(t => t.id !== taskId)
+}
 
   function clearTasks(): void {
     tasks.value      = []

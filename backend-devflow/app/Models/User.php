@@ -58,5 +58,24 @@ class User extends Authenticatable
     public function refreshTokens(){
         return $this->hasMany(RefreshToken::class);
     }
+
+    public function memberProjects(): BelongsToMany
+{
+    return $this->belongsToMany(
+        Project::class,
+        'project_members',
+        'user_id',
+        'project_id'
+    )->withPivot('role')->withTimestamps();
+}
+
+// All projects accessible to this user (owned + member of)
+// DSA — Set union: combines two disjoint sets of project IDs
+// into a single collection with no duplicates.
+public function accessibleProjects(): \Illuminate\Database\Eloquent\Builder
+{
+    return Project::where('user_id', $this->id)
+        ->orWhereHas('members', fn ($q) => $q->where('user_id', $this->id));
+}
     
 }

@@ -25,6 +25,14 @@ class ProjectResource extends JsonResource
             'owner'       => new UserResource($this->whenLoaded('owner')),
             'tasks'       => TaskResource::collection($this->whenLoaded('tasks')),
             'tasks_count' => $this->whenCounted('tasks'),
+            'members'     => $this->whenLoaded('members', fn () =>
+                $this->members->map(fn ($member) => [
+                    'id'    => $member->id,
+                    'name'  => $member->name,
+                    'email' => $member->email,
+                    'role'  => $member->pivot->role,
+                ])
+            ),
         ];
     }
 }

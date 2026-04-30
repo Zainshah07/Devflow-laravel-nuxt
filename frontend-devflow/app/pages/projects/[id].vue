@@ -26,8 +26,6 @@
         <div class="header-right">
           <!-- Presence bar — who is viewing this project -->
           <PresenceBar
-            :users="realtime.onlineUsers.value"
-            :connected="realtime.isConnected.value"
           />
           <button class="btn-primary" @click="openCreateModal('todo')">
             + New task
@@ -163,7 +161,7 @@ onMounted(async () => {
 
     await taskStore.fetchTasks(projectId.value, filters)
 
-    // Subscribe to real-time updates after tasks are loaded
+    // Subscribe AFTER tasks are loaded and auth is confirmed
     realtime.subscribe()
 
   } catch (err: any) {
@@ -174,10 +172,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  // DSA — Set cleanup: remove this socket from the channel member set
   realtime.unsubscribe()
   taskStore.clearTasks()
-})
+})  
 
 function openCreateModal(status: TaskStatus = 'todo'): void {
   modalDefaultStatus.value = status
