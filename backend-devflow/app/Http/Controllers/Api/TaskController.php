@@ -117,41 +117,38 @@ class TaskController extends Controller
         ], 200);
     }
 
-    public function update(UpdateTaskRequest $request, Project $project, Task $task): JsonResponse|TaskResource
+    public function update(UpdateTaskRequest $request, Task $task): JsonResponse|TaskResource
     {
-        $this->authorize('update', $task->project);
+        // Load project so policy and IDOR check work correctly
+        $task->loadMissing('project');
+        $this->authorize('view', $task->project);
 
-        // DSA — Directed Graph traversal:
-        // The status field represents a node in a directed graph.
-        // Todo → InProgress → Done are the only valid directed edges.
-        // canTransitionTo() checks whether the requested edge exists.
-        // This is identical to checking adjacency in a graph:
-        // "Is there a directed edge from currentNode to requestedNode?"
-        // If not, we reject — same as returning false in Course Schedule.
+        $statusChanged = false;
+        $oldStatus     = $task->status->value;
+
         if ($request->has('status')) {
-            $currentStatus = $task->status;
+            $currentStatus   = $task->status;
             $requestedStatus = TaskStatus::from($request->validated('status'));
 
             if (!$currentStatus->canTransitionTo($requestedStatus)) {
                 return response()->json([
                     'message' => "Invalid transition: cannot move from '{$currentStatus->value}' to '{$requestedStatus->value}'.",
                     'errors'  => [
-                        'status' => [
-                            "Tasks can only move: todo → in_progress → done.",
-                        ],
+                        'status' => ["Tasks can only move: todo → in_progress → done."],
                     ],
                 ], 422);
             }
+
+            $statusChanged = true;
         }
-        $oldStatus = $task->status->value;
+
         $task->update($request->validated());
-        // Invalidate cache after every write
+
         $this->cache->invalidateProject($task->project_id);
-        $statusChanged = $task->wasChanged('status');
-        
         StatsController::invalidateCache($request->user()->id);
-       $freshTask = $task->fresh()->load(['assignees', 'creator', 'project']);
-        // Broadcast status change separately for targeted UI updates
+
+        $freshTask = $task->fresh()->load(['assignees', 'creator', 'project']);
+
         if ($statusChanged) {
             broadcast(new TaskStatusChanged(
                 $freshTask,
@@ -162,26 +159,36 @@ class TaskController extends Controller
             broadcast(new TaskUpdated($freshTask))->toOthers();
         }
 
-        return response()->json([
-            'success'  => true,
-            'message'  => 'Task updated successfully',
-            'data'     => new TaskResource($freshTask),
-        ], 200);
+        return new TaskResource($freshTask);
     }
 
-    public function destroy(Request $request, Project $project, Task $task){
-        $this->authorize('view', $project);
+    public function destroy(Request $request, Task $task): JsonResponse
+    {
+        // Load project relationship for the policy check
+        $task->loadMissing('project');
+
+        // Check the user can access this project at all (IDOR protection)
+        $this->authorize('view', $task->project);
+
+        // Check the user can delete this specific task
+        // TaskPolicy::delete allows: task creator OR project owner
+        $this->authorize('delete', $task);
+
+        $taskId    = $task->id;
+        $projectId = $task->project_id;
+        $userId    = $request->user()->id;
 
         $task->delete();
-          $this->cache->invalidateProject($project->id);
-        StatsController::invalidateCache($request->user()->id);
-        
+
+        $this->cache->invalidateProject($projectId);
+        StatsController::invalidateCache($userId);
+
         broadcast(new TaskDeleted($taskId, $projectId))->toOthers();
 
         return response()->json([
             'success'  => true,
             'message'  => 'Task deleted successfully',
-        ], 204);
+        ], 200);
     }
 
 }

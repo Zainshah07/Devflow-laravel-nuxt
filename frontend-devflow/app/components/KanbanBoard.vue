@@ -5,44 +5,42 @@
       :key="column.status"
       class="kanban-column"
     >
-      <!-- Header Section -->
       <div class="column-header">
         <div class="column-title">
           <span class="column-dot" :style="{ background: column.color }" />
           <span>{{ column.label }}</span>
-          <span class="column-count">{{ column.tasks.length }}</span>
+          <span class="column-count">{{ column.list.value.length }}</span>
         </div>
         <button class="add-btn" @click="$emit('add-task', column.status)">+</button>
       </div>
 
-      <!-- Task List Section -->
-      <!-- We use a standard div and apply the v-draggable directive -->
       <div
-        v-draggable="[column.tasks, { group: 'tasks', animation: 150, onEnd: onDragEnd }]"
+        v-draggable="[
+          column.list,
+          {
+            group: 'tasks',
+            animation: 150,
+            ghostClass: 'task-ghost',
+            onEnd: onDragEnd,
+          }
+        ]"
         class="task-list"
         :data-status="column.status"
-        style="min-height: 100px; display: flex; flex-direction: column; gap: 12px;"
       >
-        <div 
-          v-for="task in column.tasks" 
+        <div
+          v-for="task in column.list.value"
           :key="task.id"
           :data-task-id="task.id"
-          class="task-item"
+          :data-task-status="task.status"
         >
           <KanbanCard
             :task="task"
             @delete="$emit('delete-task', $event)"
           />
         </div>
-
-        <!-- Fallback if array has items but they aren't showing -->
-        <div v-if="column.tasks.length > 0 && !column.tasks[0].id" style="color: red;">
-          Data Error: Task object missing ID
-        </div>
       </div>
 
-      <!-- Empty State -->
-      <div v-if="column.tasks.length === 0" class="empty-column">
+      <div v-if="column.list.value.length === 0" class="empty-column">
         No tasks
       </div>
 
@@ -50,51 +48,117 @@
         <span>+</span> Add task
       </button>
     </div>
+
+    <!-- Error toast for invalid transitions -->
+    <Transition name="toast">
+      <div v-if="transitionError" class="transition-toast">
+        {{ transitionError }}
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-// Import the directive instead of the component
 import { vDraggable } from 'vue-draggable-plus'
 import type { Task, TaskStatus } from '~/types'
 import { useTaskStore } from '~/stores/tasks'
 
-const props = defineProps<{ projectId: number }>()
-const emit = defineEmits(['add-task', 'delete-task'])
-const taskStore = useTaskStore()
+defineProps<{ projectId: number }>()
 
-// Direct computation ensures the UI reacts the moment taskStore.tasks changes
-const columns = computed(() => {
-  const allTasks = taskStore.tasks || []
-  return [
-    { status: 'todo' as TaskStatus, label: 'Todo', color: '#888780', tasks: allTasks.filter(t => t.status === 'todo') },
-    { status: 'in_progress' as TaskStatus, label: 'In Progress', color: '#378add', tasks: allTasks.filter(t => t.status === 'in_progress') },
-    { status: 'done' as TaskStatus, label: 'Done', color: '#1d9e75', tasks: allTasks.filter(t => t.status === 'done') }
-  ]
-})
+const emit = defineEmits<{
+  'add-task':    [status: TaskStatus]
+  'delete-task': [taskId: number]
+}>()
 
-async function onDragEnd(evt: any) {
-  const taskId = Number(evt.item?.dataset?.taskId)
-  const newStatus = evt.to?.dataset?.status as TaskStatus
+const taskStore       = useTaskStore()
+const transitionError = ref<string | null>(null)
 
-  if (!taskId || !newStatus) return
+// DSA — Directed Graph adjacency list: valid status transitions
+const validTransitions: Record<TaskStatus, TaskStatus[]> = {
+  todo:        ['in_progress'],
+  in_progress: ['done'],
+  done:        [],
+}
 
-  const task = taskStore.tasks.find(t => t.id === taskId)
-  if (!task || task.status === newStatus) return
+// Writable refs for each column
+// v-draggable needs actual refs it can mutate, not computed arrays
+const todoList       = ref<Task[]>([])
+const inProgressList = ref<Task[]>([])
+const doneList       = ref<Task[]>([])
 
-  const previousStatus = task.status
-  task.status = newStatus // Optimistic update
+// Sync from store whenever tasks change
+// The spread () => [...taskStore.tasks] ensures Vue detects splice mutations
+watch(
+  () => [...taskStore.tasks],
+  (newTasks) => {
+    todoList.value       = newTasks.filter(t => t.status === 'todo')
+    inProgressList.value = newTasks.filter(t => t.status === 'in_progress')
+    doneList.value       = newTasks.filter(t => t.status === 'done')
+  },
+  { immediate: true }
+)
 
+// columns references the refs directly so the template can use column.list.value
+const columns = [
+  { status: 'todo'        as TaskStatus, label: 'Todo',        color: '#888780', list: todoList },
+  { status: 'in_progress' as TaskStatus, label: 'In Progress', color: '#378add', list: inProgressList },
+  { status: 'done'        as TaskStatus, label: 'Done',        color: '#1d9e75', list: doneList },
+]
+
+function syncFromStore(): void {
+  const all            = taskStore.tasks
+  todoList.value       = all.filter(t => t.status === 'todo')
+  inProgressList.value = all.filter(t => t.status === 'in_progress')
+  doneList.value       = all.filter(t => t.status === 'done')
+}
+
+function showError(message: string): void {
+  transitionError.value = message
+  setTimeout(() => { transitionError.value = null }, 3000)
+}
+
+async function onDragEnd(evt: any): Promise<void> {
+  const taskId    = Number(evt.item?.dataset?.taskId)
+  const oldStatus = evt.item?.dataset?.taskStatus as TaskStatus
+  const newStatus = (evt.to as HTMLElement)?.dataset?.status as TaskStatus
+
+  if (!taskId || !oldStatus || !newStatus) {
+    syncFromStore()
+    return
+  }
+
+  // Same column — nothing to do
+  if (oldStatus === newStatus) {
+    return
+  }
+
+  // DSA — Graph edge check: is this transition valid?
+  if (!validTransitions[oldStatus]?.includes(newStatus)) {
+    const messages: Record<string, string> = {
+      'todo-done':        'Tasks must go to In Progress before Done.',
+      'in_progress-todo': 'Tasks cannot move backwards to Todo.',
+      'done-todo':        'Completed tasks cannot be moved back.',
+      'done-in_progress': 'Completed tasks cannot be moved back.',
+    }
+    showError(messages[`${oldStatus}-${newStatus}`] ?? 'Invalid transition.')
+    // Revert DOM immediately — no API call
+    syncFromStore()
+    return
+  }
+
+  // Valid — update store (handles optimistic update + API + rollback)
   try {
     await taskStore.updateStatus(taskId, newStatus)
-  } catch (err) {
-    task.status = previousStatus // Rollback
+  } catch (err: any) {
+    showError(err?.data?.message ?? 'Failed to update task.')
+    syncFromStore()
   }
 }
 </script>
 
 <style scoped>
 .kanban {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
@@ -174,10 +238,6 @@ async function onDragEnd(evt: any) {
   border-radius: 8px;
 }
 
-.task-dragging {
-  transform: rotate(1.5deg);
-}
-
 .empty-column {
   text-align: center;
   font-size: 12px;
@@ -204,5 +264,33 @@ async function onDragEnd(evt: any) {
 .add-task-row:hover {
   background: #ffffff;
   color: #374151;
+}
+
+.transition-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 22px;
+  border-radius: 8px;
+  z-index: 9999;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
 }
 </style>
