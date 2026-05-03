@@ -1,46 +1,83 @@
 import type { Task, TaskStatus } from '~/types'
 
 export function useRealtimeTasks(projectId: number) {
-  const { $echo }     = useNuxtApp()
+  const nuxtApp       = useNuxtApp()
   const taskStore     = useTaskStore()
   const presenceStore = usePresenceStore()
+  const authStore     = useAuthStore()
 
-  let privateChannel:  any = null
-  let presenceChannel: any = null
+  let subscribed = false
+
+  function getEchoInstance(): any | null {
+    // $echo is now a getter function — call it to get the instance
+    const echo = (nuxtApp as any).$echo?.()
+    if (!echo) {
+      console.warn('[Realtime] Echo instance not available yet')
+      return null
+    }
+    return echo
+  }
 
   function subscribe(): void {
-    if (!$echo) {
-      console.warn('Echo not available')
+    if (subscribed) {
+      unsubscribe()
+    }
+
+    // Wait for Echo to be ready with a retry mechanism
+    // This handles the case where subscribe() is called before
+    // Echo has connected (e.g. after a page load with silent refresh)
+    attemptSubscribe(0)
+  }
+
+  function attemptSubscribe(attempt: number): void {
+    const echo = getEchoInstance()
+
+    if (!echo) {
+      if (attempt < 10) {
+        // Retry up to 10 times with 500ms delay
+        // Total max wait: 5 seconds
+        setTimeout(() => attemptSubscribe(attempt + 1), 500)
+        return
+      }
+      console.error('[Realtime] Could not get Echo instance after retries')
       return
     }
 
-    cleanup()
+    if (!authStore.accessToken) {
+      if (attempt < 10) {
+        setTimeout(() => attemptSubscribe(attempt + 1), 500)
+        return
+      }
+      console.error('[Realtime] No auth token available after retries')
+      return
+    }
 
-    // ── Private channel — task events ──────────────────────────────
+    doSubscribe(echo)
+  }
+
+  function doSubscribe(echo: any): void {
     try {
-      privateChannel = ($echo as any).private(`project.${projectId}`)
+      // ── Private channel — task CRUD events ───────────────────────
+      const privateChannel = echo.private(`project.${projectId}`)
 
       privateChannel
         .listen('.task.created', (data: any) => {
           const task: Task = data.data ?? data
-          // Check duplicate before adding
           const exists = taskStore.tasks.find((t: Task) => t.id === task.id)
           if (!exists) {
             taskStore.tasks.unshift(task)
           }
         })
         .listen('.task.updated', (data: any) => {
-          const task: Task = data.data ?? data
+          const task: Task  = data.data ?? data
           const index = taskStore.tasks.findIndex((t: Task) => t.id === task.id)
           if (index !== -1) {
-            // splice triggers Vue 3 reactivity — index assignment does not
             taskStore.tasks.splice(index, 1, task)
           }
         })
         .listen('.task.status_changed', (data: any) => {
           const index = taskStore.tasks.findIndex((t: Task) => t.id === data.task_id)
           if (index !== -1) {
-            // Create a new object with the updated status using splice
             taskStore.tasks.splice(index, 1, {
               ...taskStore.tasks[index],
               status: data.new_status as TaskStatus,
@@ -51,14 +88,10 @@ export function useRealtimeTasks(projectId: number) {
           taskStore.tasks = taskStore.tasks.filter((t: Task) => t.id !== data.task_id)
         })
 
-      console.log(`Subscribed to private channel: project.${projectId}`)
-    } catch (err) {
-      console.error('Failed to subscribe to private channel:', err)
-    }
+      console.log(`[Realtime] Subscribed to private channel: project.${projectId}`)
 
-    // ── Presence channel ───────────────────────────────────────────
-    try {
-      presenceChannel = ($echo as any).join(`project.${projectId}`)
+      // ── Presence channel — who is viewing ────────────────────────
+      const presenceChannel = echo.join(`project.${projectId}`)
 
       presenceChannel
         .here((users: Array<{ id: number; name: string }>) => {
@@ -72,28 +105,27 @@ export function useRealtimeTasks(projectId: number) {
           presenceStore.removeUser(user)
         })
         .error((err: any) => {
-          console.error('Presence channel error:', err)
+          console.error('[Realtime] Presence channel error:', err)
           presenceStore.setConnected(false)
         })
 
-      console.log(`Joined presence channel: project.${projectId}`)
-    } catch (err) {
-      console.error('Failed to join presence channel:', err)
-    }
-  }
+      console.log(`[Realtime] Joined presence channel: project.${projectId}`)
+      subscribed = true
 
-  function cleanup(): void {
-    if (privateChannel || presenceChannel) {
-      try {
-        ($echo as any).leave(`project.${projectId}`)
-      } catch {}
-      privateChannel  = null
-      presenceChannel = null
+    } catch (err) {
+      console.error('[Realtime] Subscription failed:', err)
+      subscribed = false
     }
   }
 
   function unsubscribe(): void {
-    cleanup()
+    const echo = getEchoInstance()
+    if (echo) {
+      try {
+        echo.leave(`project.${projectId}`)
+      } catch {}
+    }
+    subscribed = false
     presenceStore.reset()
   }
 

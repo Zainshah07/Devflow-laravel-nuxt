@@ -11,9 +11,10 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use App\Http\Resources\TaskResource;
 use App\Models\Task;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 
-class TaskUpdated
+class TaskUpdated implements ShouldBroadcast, ShouldQueue
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 

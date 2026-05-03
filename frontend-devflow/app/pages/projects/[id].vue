@@ -118,11 +118,11 @@
   </div>
 </template>
 
-<script setup lang="ts">
-import { useProjectStore }     from '~/stores/projects'
-import { useTaskStore }        from '~/stores/tasks'
-import { useTaskFilters }      from '~/composables/useTaskFilters'
-import { useRealtimeTasks }    from '~/composables/useRealtimeTasks'
+<script setup lang="ts">import { useProjectStore }  from '~/stores/projects'
+import { useTaskStore }     from '~/stores/tasks'
+import { useTaskFilters }   from '~/composables/useTaskFilters'
+import { useRealtimeTasks } from '~/composables/useRealtimeTasks'
+import { useAuthStore }     from '~/stores/auth'
 import type { Project, TaskStatus } from '~/types'
 
 definePageMeta({
@@ -133,6 +133,7 @@ definePageMeta({
 const route        = useRoute()
 const projectStore = useProjectStore()
 const taskStore    = useTaskStore()
+const authStore    = useAuthStore()
 
 const projectId          = computed(() => Number(route.params.id))
 const project            = ref<Project | null>(null)
@@ -142,9 +143,9 @@ const showModal          = ref(false)
 const modalDefaultStatus = ref<TaskStatus>('todo')
 
 const { filters, resetFilters } = useTaskFilters(projectId.value)
-
-// DSA — Graph subscription: subscribe to the project's real-time channel
 const realtime = useRealtimeTasks(projectId.value)
+
+let subscribeAttempted = false
 
 onMounted(async () => {
   try {
@@ -161,8 +162,10 @@ onMounted(async () => {
 
     await taskStore.fetchTasks(projectId.value, filters)
 
-    // Subscribe AFTER tasks are loaded and auth is confirmed
+    // Subscribe to real-time updates
+    // The composable handles retrying if Echo is not ready yet
     realtime.subscribe()
+    subscribeAttempted = true
 
   } catch (err: any) {
     error.value = err?.data?.message ?? 'Failed to load project.'
@@ -171,10 +174,24 @@ onMounted(async () => {
   }
 })
 
+// Watch for auth token becoming available (happens after silentRefresh)
+// If Echo was not ready when subscribe() was first called,
+// this watcher will trigger a re-subscribe once the token is set
+watch(
+  () => authStore.accessToken,
+  (newToken) => {
+    if (newToken && subscribeAttempted) {
+      // Token just became available — re-subscribe to ensure connection
+      realtime.unsubscribe()
+      realtime.subscribe()
+    }
+  }
+)
+
 onUnmounted(() => {
   realtime.unsubscribe()
   taskStore.clearTasks()
-})  
+})
 
 function openCreateModal(status: TaskStatus = 'todo'): void {
   modalDefaultStatus.value = status
