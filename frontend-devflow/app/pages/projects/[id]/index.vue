@@ -106,6 +106,7 @@
         </div>
 
       </div>
+      
     </div>
 
     <CreateTaskModal
@@ -118,17 +119,19 @@
   </div>
 </template>
 
-<script setup lang="ts">import { useProjectStore }  from '~/stores/projects'
-import { useTaskStore }     from '~/stores/tasks'
-import { useTaskFilters }   from '~/composables/useTaskFilters'
-import { useRealtimeTasks } from '~/composables/useRealtimeTasks'
-import { useAuthStore }     from '~/stores/auth'
-import type { Project, TaskStatus } from '~/types'
+<script setup lang="ts">
 
 definePageMeta({
   layout:     'default',
   middleware: 'auth',
 })
+
+import { useProjectStore }  from '~/stores/projects'
+import { useTaskStore }     from '~/stores/tasks'
+import { useTaskFilters }   from '~/composables/useTaskFilters'
+import { useRealtimeTasks } from '~/composables/useRealtimeTasks'
+import { useAuthStore }     from '~/stores/auth'
+import type { Project, TaskStatus } from '~/types'
 
 const route        = useRoute()
 const projectStore = useProjectStore()
@@ -142,10 +145,10 @@ const error              = ref<string | null>(null)
 const showModal          = ref(false)
 const modalDefaultStatus = ref<TaskStatus>('todo')
 
-const { filters, resetFilters } = useTaskFilters(projectId.value)
-const realtime = useRealtimeTasks(projectId.value)
+// Get filters composable — markInitialized prevents watcher double-fetch
+const { filters, resetFilters, markInitialized } = useTaskFilters(projectId.value)
 
-let subscribeAttempted = false
+const realtime = useRealtimeTasks(projectId.value)
 
 onMounted(async () => {
   try {
@@ -160,12 +163,14 @@ onMounted(async () => {
       return
     }
 
+    // Single fetch on mount — the watcher will handle subsequent filter changes
     await taskStore.fetchTasks(projectId.value, filters)
 
-    // Subscribe to real-time updates
-    // The composable handles retrying if Echo is not ready yet
+    // Mark initialized AFTER the first fetch so the watcher
+    // does not immediately re-fetch on the next tick
+    markInitialized()
+
     realtime.subscribe()
-    subscribeAttempted = true
 
   } catch (err: any) {
     error.value = err?.data?.message ?? 'Failed to load project.'
@@ -174,14 +179,11 @@ onMounted(async () => {
   }
 })
 
-// Watch for auth token becoming available (happens after silentRefresh)
-// If Echo was not ready when subscribe() was first called,
-// this watcher will trigger a re-subscribe once the token is set
+// Re-subscribe if auth token refreshed after page load
 watch(
   () => authStore.accessToken,
   (newToken) => {
-    if (newToken && subscribeAttempted) {
-      // Token just became available — re-subscribe to ensure connection
+    if (newToken && project.value) {
       realtime.unsubscribe()
       realtime.subscribe()
     }

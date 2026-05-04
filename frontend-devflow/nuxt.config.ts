@@ -28,4 +28,10 @@ export default defineNuxtConfig({
   },
 
   css: ['~/assets/css/main.css'],
+
+  // This tells Nuxt explicitly that [id]/index.vue is NOT
+  // a layout parent for [id]/graph.vue
+  experimental: {
+    scanPageMeta: true,
+  },
 })

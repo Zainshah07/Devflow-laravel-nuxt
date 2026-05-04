@@ -8,14 +8,16 @@
           </svg>
           Back to board
         </NuxtLink>
-        <h2 class="page-title">{{ project?.name ?? 'Loading...' }} — Dependency graph</h2>
+        <h2 class="page-title">
+          {{ project?.name ?? 'Loading...' }} — Dependency graph
+        </h2>
         <p class="page-sub">
           Arrows show task dependencies. A → B means A must be completed before B can start.
         </p>
       </div>
 
       <button
-        v-if="taskStore.tasks.length > 0"
+        v-if="tasks.length > 0"
         class="btn-primary"
         @click="showAddDep = true"
       >
@@ -23,46 +25,66 @@
       </button>
     </div>
 
-    <!-- Dependency graph -->
-    <DependencyGraph
-      :key="graphKey"
-      :project-id="projectId"
-    />
-
-    <!-- Task list for adding dependencies -->
-    <div v-if="taskStore.tasks.length > 0" class="tasks-panel">
-      <h3 class="panel-title">Tasks in this project</h3>
-      <p class="panel-sub">
-        Select a task below to manage its dependencies.
-      </p>
-
-      <div class="task-list">
-        <div
-          v-for="task in taskStore.tasks"
-          :key="task.id"
-          class="task-row"
-        >
-          <span class="status-dot" :style="{ background: statusColor(task.status) }" />
-          <span class="task-title">{{ task.title }}</span>
-          <span class="priority-badge" :class="'priority-badge--' + task.priority">
-            {{ task.priority }}
-          </span>
-          <button
-            class="dep-btn"
-            @click="openAddDep(task.id, task.title)"
-          >
-            + Dependency
-          </button>
-        </div>
-      </div>
+    <div v-if="pageLoading" class="page-state">
+      Loading project...
     </div>
 
-    <!-- Add dependency modal -->
+    <template v-else>
+      <TaskDependencyGraph
+        
+        :project-id="projectId"
+      />
+
+      <div v-if="tasksLoading" class="page-state">
+        Loading tasks...
+      </div>
+
+      <div v-else-if="tasks.length > 0" class="tasks-panel">
+        <h3 class="panel-title">Tasks in this project</h3>
+        <p class="panel-sub">
+          Click "+ Dependency" on a task to add what it depends on.
+        </p>
+
+        <div class="task-list">
+          <div
+            v-for="task in tasks"
+            :key="task.id"
+            class="task-row"
+          >
+            <span
+              class="status-dot"
+              :style="{ background: statusColor(task.status) }"
+            />
+            <span class="task-title">{{ task.title }}</span>
+            <span
+              class="priority-badge"
+              :class="'priority-badge--' + task.priority"
+            >
+              {{ task.priority }}
+            </span>
+            <button
+              class="dep-btn"
+              @click="openAddDep(task.id, task.title)"
+            >
+              + Dependency
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="empty-state">
+        No tasks in this project yet.
+        <NuxtLink :to="`/projects/${projectId}`">
+          Create some tasks first →
+        </NuxtLink>
+      </div>
+    </template>
+
     <AddDependencyModal
       v-if="showAddDep && selectedTaskId"
       :task-id="selectedTaskId"
       :task-title="selectedTaskTitle"
-      :all-tasks="taskStore.tasks"
+      :all-tasks="tasks"
       @close="showAddDep = false"
       @added="handleDependencyAdded"
     />
@@ -70,38 +92,72 @@
 </template>
 
 <script setup lang="ts">
-import { useProjectStore } from '~/stores/projects'
-import { useTaskStore }    from '~/stores/tasks'
-import type { Project, TaskStatus } from '~/types'
 
 definePageMeta({
   layout:     'default',
   middleware: 'auth',
+  key: route => route.fullPath
 })
+import type { Project, Task, TaskStatus } from '~/types'
+import { useProjectStore } from '~/stores/projects'
+import TaskDependencyGraph from '~/components/TaskDependencyGraph.vue'
+
+
 
 const route        = useRoute()
 const projectStore = useProjectStore()
-const taskStore    = useTaskStore()
 
-const projectId        = computed(() => Number(route.params.id))
-const project          = ref<Project | null>(null)
-const showAddDep       = ref(false)
-const selectedTaskId   = ref<number | null>(null)
+const projectId = Number(route.params.id)
+
+// Local state — completely independent of the task store
+// so navigating here does not interfere with the kanban board
+const project       = ref<Project | null>(null)
+const tasks         = ref<Task[]>([])
+const pageLoading   = ref(true)
+const tasksLoading  = ref(false)
+const showAddDep    = ref(false)
+const selectedTaskId    = ref<number | null>(null)
 const selectedTaskTitle = ref('')
-const graphKey         = ref(0)  // increment to force graph re-render
+// const graphKey      = ref(0)
 
 onMounted(async () => {
-  if (projectStore.projects.length === 0) {
-    await projectStore.fetchProjects()
+  try {
+    if (projectStore.projects.length === 0) {
+      await projectStore.fetchProjects()
+    }
+    project.value = projectStore.findById(projectId) ?? null
+    await fetchTasks()
+  } finally {
+    pageLoading.value = false
   }
-  project.value = projectStore.findById(projectId.value) ?? null
-
-  await taskStore.fetchTasks(projectId.value)
 })
 
-onUnmounted(() => {
-  taskStore.clearTasks()
+onMounted(() => {
+  console.log('GRAPH PAGE MOUNTED')
 })
+
+async function fetchTasks(): Promise<void> {
+  if (tasksLoading.value) return
+  tasksLoading.value = true
+
+  try {
+    const { get } = useApi()
+    const response = await get<any>(`/projects/${projectId}/tasks`)
+
+    if (Array.isArray(response.data)) {
+      tasks.value = response.data
+    } else if (Array.isArray(response)) {
+      tasks.value = response
+    } else {
+      tasks.value = []
+    }
+  } catch (err) {
+    console.error('[GraphPage] Failed to load tasks:', err)
+    tasks.value = []
+  } finally {
+    tasksLoading.value = false
+  }
+}
 
 function openAddDep(taskId: number, taskTitle: string): void {
   selectedTaskId.value    = taskId
@@ -110,9 +166,7 @@ function openAddDep(taskId: number, taskTitle: string): void {
 }
 
 function handleDependencyAdded(): void {
-  // Increment graphKey to force DependencyGraph to re-fetch and re-render
-  // DSA: this triggers a full graph re-traversal O(V + E) to show the new edge
-  graphKey.value++
+ fetchTasks()
 }
 
 function statusColor(status: TaskStatus): string {
@@ -121,7 +175,7 @@ function statusColor(status: TaskStatus): string {
     in_progress: '#378add',
     done:        '#1d9e75',
   }
-  return colors[status]
+  return colors[status] ?? '#888780'
 }
 </script>
 
@@ -148,6 +202,7 @@ function statusColor(status: TaskStatus): string {
   font-size: 12px;
   color: #9ca3af;
   transition: color 0.1s;
+  margin-bottom: 2px;
 }
 
 .back-link:hover {
@@ -181,6 +236,13 @@ function statusColor(status: TaskStatus): string {
 
 .btn-primary:hover {
   opacity: 0.85;
+}
+
+.page-state {
+  padding: 40px;
+  text-align: center;
+  font-size: 13px;
+  color: #9ca3af;
 }
 
 .tasks-panel {
@@ -269,5 +331,21 @@ function statusColor(status: TaskStatus): string {
 .dep-btn:hover {
   background: #f3f4f6;
   color: #111827;
+}
+
+.empty-state {
+  margin-top: 20px;
+  padding: 32px;
+  text-align: center;
+  font-size: 13px;
+  color: #9ca3af;
+  border: 1px dashed #e5e7eb;
+  border-radius: 10px;
+}
+
+.empty-state a {
+  color: #378add;
+  display: block;
+  margin-top: 8px;
 }
 </style>

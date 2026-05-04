@@ -27,6 +27,8 @@ export const useProjectStore = defineStore('projects', () => {
   )
 
   async function fetchProjects(): Promise<void> {
+     if (loading.value) return
+     
     loading.value = true
     error.value   = null
 
